@@ -1,0 +1,2 @@
+// Payment Model
+module.exports = {};

@@ -1,0 +1,2 @@
+// Tutor Model
+module.exports = {};

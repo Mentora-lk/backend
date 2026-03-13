@@ -1,0 +1,2 @@
+// Booking Model
+module.exports = {};
