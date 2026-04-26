@@ -7,6 +7,7 @@ const pool = new Pool({
   user: env.db.user,
   password: env.db.password,
   database: env.db.database,
+  ssl: true,
 });
 
 const connectDatabase = async () => {
