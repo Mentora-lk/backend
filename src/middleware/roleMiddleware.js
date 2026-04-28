@@ -1,6 +1,10 @@
-const roleMiddleware = (req, res, next) => {
-  // Placeholder for role-based middleware
-  next();
+const restrictTo = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'You do not have permission to perform this action' });
+    }
+    next();
+  };
 };
 
-module.exports = roleMiddleware;
+module.exports = { restrictTo };

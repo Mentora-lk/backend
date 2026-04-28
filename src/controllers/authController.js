@@ -17,15 +17,18 @@ const registerStudent = async (req, res) => {
         const profile = await userModel.createStudentProfile(user.id, { fullName, school, age, language, gradeLevel, address });
 
         res.status(201).json({
-            id: user.id,
-            email: user.email,
-            role: user.role,
+            token: generateToken(user.id, user.role),
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+            },
             profile,
-            token: generateToken(user.id, user.role)
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        console.error('[registerStudent] Error:', error.message);
+        console.error(error.stack);
+        res.status(500).json({ message: error.message || 'Server error' });
     }
 };
 
@@ -44,15 +47,18 @@ const registerTutor = async (req, res) => {
         const profile = await userModel.createTutorProfile(user.id, { fullName, dob, gender, city, address, university, degree, graduationYear, experience, description });
 
         res.status(201).json({
-            id: user.id,
-            email: user.email,
-            role: user.role,
+            token: generateToken(user.id, user.role),
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+            },
             profile,
-            token: generateToken(user.id, user.role)
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        console.error('[registerTutor] Error:', error.message);
+        console.error(error.stack);
+        res.status(500).json({ message: error.message || 'Server error' });
     }
 };
 
@@ -67,13 +73,16 @@ const loginUser = async (req, res) => {
         if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
         res.json({
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            token: generateToken(user.id, user.role)
+            token: generateToken(user.id, user.role),
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+            },
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('[loginUser] Error:', error.message);
+        res.status(500).json({ message: error.message || 'Server error' });
     }
 };
 
