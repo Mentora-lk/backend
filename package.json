@@ -23,15 +23,6 @@
     "pg": "^8.20.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Mentora-lk/backend.git"
-  },
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/Mentora-lk/backend/issues"
-  },
-  "homepage": "https://github.com/Mentora-lk/backend#readme"
+    "nodemon": "^2.0.20"
+  }
 }
