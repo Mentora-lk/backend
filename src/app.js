@@ -1,9 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const env = require('./config/env');
-const errorMiddleware = require('./middleware/errorMiddleware');
-
-// Routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const tutorRoutes = require('./routes/tutorRoutes');
@@ -15,12 +11,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: env.frontendUrl,
-  credentials: true,
-}));
-
-app.use(express.json());
+app.use(cors());
+app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
@@ -32,21 +24,31 @@ app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Server is running',
-    timestamp: new Date().toISOString()
-  });
+// Health Check
+app.get('/', (req, res) => {
+    res.send('Mentora API is running...');
 });
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' });
-});
-
-// Error handling
-app.use(errorMiddleware);
 
 module.exports = app;
+
+const db = require('./config/db');
+
+// Database Health Check Route
+app.get('/api/db-status', async (req, res) => {
+    try {
+        // Run a simple query to get the current time from PostgreSQL
+        const result = await db.query('SELECT NOW()');
+        res.status(200).json({ 
+            status: 'success', 
+            message: 'Database is connected!', 
+            serverTime: result.rows[0].now 
+        });
+    } catch (error) {
+        console.error('Database connection failed:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Database connection failed', 
+            error: error.message 
+        });
+    }
+});
