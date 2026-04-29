@@ -24,12 +24,27 @@ const createStudentProfile = async (userId, data) => {
 };
 
 const createTutorProfile = async (userId, data) => {
-    // Adding basic fields from the UI forms
-    const { fullName, dob, gender, city, address, university, degree, graduationYear, experience, description } = data;
+    const { 
+        fullName, dob, gender, city, email, address, profilePictureUrl, bannerUrl, 
+        university, degreeTitle, graduationYear, experience, subjects, 
+        gradeRange, level, medium, classType, description 
+    } = data;
+    
     const result = await db.query(
-        `INSERT INTO tutor_profiles (user_id, full_name, dob, gender, city, address, university, degree_title, graduation_year, experience, description) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-        [userId, fullName, dob, gender, city, address, university, degree, graduationYear, experience, description]
+        `INSERT INTO tutor_profiles (
+            user_id, full_name, dob, gender, city, email, address, 
+            profile_picture_url, banner_url, university, degree_title, 
+            graduation_year, experience, subjects, grade_range, level, 
+            medium, class_type, description
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+        ) RETURNING *`,
+        [
+            userId, fullName, dob, gender, city, email, address, 
+            profilePictureUrl, bannerUrl, university, degreeTitle, 
+            graduationYear, experience, subjects, gradeRange, level, 
+            medium, classType, description
+        ]
     );
     return result.rows[0];
 };

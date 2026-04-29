@@ -33,6 +33,29 @@ module.exports = app;
 
 const db = require('./config/db');
 
+// TEMPORARY: Debug route to check user account status
+app.get('/api/debug/check-user/:email', async (req, res) => {
+    try {
+        const result = await db.query('SELECT id, email, role, password_hash, created_at FROM users WHERE email = $1', [req.params.email]);
+        if (result.rows.length === 0) {
+            return res.json({ found: false, message: 'No user found with this email' });
+        }
+        const user = result.rows[0];
+        res.json({
+            found: true,
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            hasPasswordHash: !!user.password_hash,
+            passwordHashLength: user.password_hash ? user.password_hash.length : 0,
+            passwordHashPrefix: user.password_hash ? user.password_hash.substring(0, 7) : null,
+            createdAt: user.created_at,
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Database Health Check Route
 app.get('/api/db-status', async (req, res) => {
     try {
