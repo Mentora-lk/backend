@@ -24,12 +24,51 @@ const createStudentProfile = async (userId, data) => {
 };
 
 const createTutorProfile = async (userId, data) => {
-    // Adding basic fields from the UI forms
-    const { fullName, dob, gender, city, address, university, degree, graduationYear, experience, description } = data;
+    const { 
+        fullName, dob, gender, city, email, address, profilePictureUrl, bannerUrl, 
+        university, degreeTitle, graduationYear, experience, subjects, 
+        gradeRange, level, medium, classType, description 
+    } = data;
+    
     const result = await db.query(
-        `INSERT INTO tutor_profiles (user_id, full_name, dob, gender, city, address, university, degree_title, graduation_year, experience, description) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-        [userId, fullName, dob, gender, city, address, university, degree, graduationYear, experience, description]
+        `INSERT INTO tutor_profiles (
+            user_id, full_name, dob, gender, city, email, address, 
+            profile_picture_url, banner_url, university, degree_title, 
+            graduation_year, experience, subjects, grade_range, level, 
+            medium, class_type, description
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+        ) RETURNING *`,
+        [
+            userId, fullName, dob, gender, city, email, address, 
+            profilePictureUrl, bannerUrl, university, degreeTitle, 
+            graduationYear, experience, subjects, gradeRange, level, 
+            medium, classType, description
+        ]
+    );
+    return result.rows[0];
+};
+
+const savePasswordResetToken = async (email, hashedToken, expiresAt) => {
+    const result = await db.query(
+        'UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE email = $3 RETURNING *',
+        [hashedToken, expiresAt, email]
+    );
+    return result.rows[0];
+};
+
+const findUserByResetToken = async (hashedToken) => {
+    const result = await db.query(
+        'SELECT * FROM users WHERE reset_password_token = $1 AND reset_password_expires > NOW()',
+        [hashedToken]
+    );
+    return result.rows[0];
+};
+
+const updatePassword = async (userId, newPasswordHash) => {
+    const result = await db.query(
+        'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2 RETURNING id, email',
+        [newPasswordHash, userId]
     );
     return result.rows[0];
 };
@@ -38,5 +77,8 @@ module.exports = {
     createUserAccount,
     findUserByEmail,
     createStudentProfile,
-    createTutorProfile
+    createTutorProfile,
+    savePasswordResetToken,
+    findUserByResetToken,
+    updatePassword
 };
