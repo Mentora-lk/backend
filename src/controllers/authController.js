@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const userModel = require('../models/userModel');
 const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
+const crypto = require('crypto');
+const sendEmail = require('../utils/sendEmail');
 
 const registerStudent = async (req, res) => {
     try {
@@ -144,4 +146,85 @@ const loginUser = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser };
+const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await userModel.findUserByEmail(email);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User with this email does not exist' });
+        }
+
+        // Generate reset token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+
+        // Hash token and set expiration
+        const resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+        
+        // Expiration: 10 minutes from now
+        const resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+        // Save to database
+        await userModel.savePasswordResetToken(email, resetPasswordToken, resetPasswordExpires);
+
+        // Create reset URL
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const resetUrl = `${frontendUrl}/auth/reset-password/${resetToken}`;
+
+        console.log(`\n\n=== PASSWORD RESET URL ===\n${resetUrl}\n==========================\n\n`);
+
+        const message = `You are receiving this email because you (or someone else) has requested the reset of your password. Please navigate to the following link to complete the process:\n\n${resetUrl}`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Password Reset Token',
+                message
+            });
+
+            res.status(200).json({ message: 'Email sent' });
+        } catch (error) {
+            console.error('[forgotPassword] Error sending email:', error.message);
+            await userModel.savePasswordResetToken(email, null, null);
+            return res.status(500).json({ message: 'Email could not be sent' });
+        }
+
+    } catch (error) {
+        console.error('[forgotPassword] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { newPassword } = req.body;
+
+        if (!newPassword || newPassword.length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+        }
+
+        // Hash token to compare with DB
+        const resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        const user = await userModel.findUserByResetToken(resetPasswordToken);
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired password reset token' });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        // Update password and clear token
+        await userModel.updatePassword(user.id, passwordHash);
+
+        res.status(200).json({ message: 'Password reset successfully' });
+    } catch (error) {
+        console.error('[resetPassword] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+module.exports = { registerStudent, registerTutor, loginUser, forgotPassword, resetPassword };

@@ -49,9 +49,36 @@ const createTutorProfile = async (userId, data) => {
     return result.rows[0];
 };
 
+const savePasswordResetToken = async (email, hashedToken, expiresAt) => {
+    const result = await db.query(
+        'UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE email = $3 RETURNING *',
+        [hashedToken, expiresAt, email]
+    );
+    return result.rows[0];
+};
+
+const findUserByResetToken = async (hashedToken) => {
+    const result = await db.query(
+        'SELECT * FROM users WHERE reset_password_token = $1 AND reset_password_expires > NOW()',
+        [hashedToken]
+    );
+    return result.rows[0];
+};
+
+const updatePassword = async (userId, newPasswordHash) => {
+    const result = await db.query(
+        'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2 RETURNING id, email',
+        [newPasswordHash, userId]
+    );
+    return result.rows[0];
+};
+
 module.exports = {
     createUserAccount,
     findUserByEmail,
     createStudentProfile,
-    createTutorProfile
+    createTutorProfile,
+    savePasswordResetToken,
+    findUserByResetToken,
+    updatePassword
 };

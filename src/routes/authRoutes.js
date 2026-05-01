@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { registerStudent, registerTutor, loginUser } = require('../controllers/authController');
+const { registerStudent, registerTutor, loginUser, forgotPassword, resetPassword } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -13,6 +13,8 @@ router.post(
     registerTutor
 );
 router.post('/login', loginUser);
+router.post('/forgot-password', forgotPassword);
+router.put('/reset-password/:token', resetPassword);
 
 // Existing Tutor Route
 router.get('/tutor-dashboard', protect, authorize('tutor'), (req, res) => {
