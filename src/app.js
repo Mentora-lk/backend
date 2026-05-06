@@ -7,6 +7,7 @@ const courseRoutes = require('./routes/courseRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 
 const app = express();
 
@@ -23,6 +24,9 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Community Module
+app.use('/api/student', studentCommunityRoutes);
 
 // Health Check
 app.get('/', (req, res) => {
@@ -61,17 +65,17 @@ app.get('/api/db-status', async (req, res) => {
     try {
         // Run a simple query to get the current time from PostgreSQL
         const result = await db.query('SELECT NOW()');
-        res.status(200).json({ 
-            status: 'success', 
-            message: 'Database is connected!', 
-            serverTime: result.rows[0].now 
+        res.status(200).json({
+            status: 'success',
+            message: 'Database is connected!',
+            serverTime: result.rows[0].now
         });
     } catch (error) {
         console.error('Database connection failed:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Database connection failed', 
-            error: error.message 
+        res.status(500).json({
+            status: 'error',
+            message: 'Database connection failed',
+            error: error.message
         });
     }
 });
