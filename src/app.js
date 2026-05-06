@@ -23,6 +23,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 
 // Health Check
 app.get('/', (req, res) => {
