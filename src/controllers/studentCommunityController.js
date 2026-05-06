@@ -18,12 +18,12 @@ const discoverCommunities = async (req, res, next) => {
         c.description,
         c.tags,
         c.created_at,
-        u.full_name  AS tutor_name,
-        u.avatar_url AS tutor_avatar,
+        tp.full_name  AS tutor_name,
+        tp.profile_picture_url AS tutor_avatar,
         (SELECT COUNT(*) FROM community_memberships cm2
          WHERE cm2.community_id = c.id AND cm2.status = 'approved') AS member_count
       FROM communities c
-      JOIN users u ON u.id = c.tutor_id
+      JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
       WHERE c.id NOT IN (
         SELECT community_id
         FROM community_memberships
@@ -108,14 +108,14 @@ const getMyClasses = async (req, res, next) => {
          c.description,
          c.tags,
          c.created_at,
-         u.full_name  AS tutor_name,
-         u.avatar_url AS tutor_avatar,
+         tp.full_name  AS tutor_name,
+         tp.profile_picture_url AS tutor_avatar,
          cm.requested_at AS joined_at,
          (SELECT COUNT(*) FROM community_memberships cm2
           WHERE cm2.community_id = c.id AND cm2.status = 'approved') AS member_count
        FROM communities c
        JOIN community_memberships cm ON cm.community_id = c.id
-       JOIN users u ON u.id = c.tutor_id
+       JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
        WHERE cm.student_id = $1 AND cm.status = 'approved'
        ORDER BY c.name ASC`,
       [studentId]
@@ -189,16 +189,18 @@ const getCommunityFeed = async (req, res, next) => {
          p.media_url,
          p.is_pinned,
          p.created_at,
-         u.id         AS author_id,
-         u.full_name  AS author_name,
-         u.avatar_url AS author_avatar,
+         p.author_id,
+         COALESCE(tp.full_name, sp.full_name, 'Unknown') AS author_name,
+         tp.profile_picture_url AS author_avatar,
+         CASE WHEN tp.user_id IS NOT NULL THEN 'Tutor' ELSE 'Student' END AS role,
          (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id) AS reaction_count,
          EXISTS (
            SELECT 1 FROM post_reactions pr
            WHERE pr.post_id = p.id AND pr.student_id = $1
          ) AS has_reacted
        FROM posts p
-       JOIN users u ON u.id = p.author_id
+       LEFT JOIN tutor_profiles tp ON tp.user_id = p.author_id
+       LEFT JOIN student_profiles sp ON sp.user_id = p.author_id
        WHERE p.community_id = $2
        ORDER BY p.is_pinned DESC, p.created_at DESC`,
       [studentId, communityId]
