@@ -40,6 +40,7 @@ router.put('/requests/:membership_id', tutorCommunityController.updateRequestSta
 // 3. Content Publishing
 // Multer accepts ANY file field name
 router.post('/communities/:id/posts', upload.any(), (req, res, next) => {
+  console.log('🔧 DEBUG: POST /communities/:id/posts reached', { communityId: req.params.id, files: req.files?.length || 0, bodyKeys: Object.keys(req.body) });
   console.log('📤 POST /communities/:id/posts hit');
   console.log('  Community ID:', req.params.id);
   console.log('  Files received:', req.files?.length || 0);

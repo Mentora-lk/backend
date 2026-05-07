@@ -202,13 +202,13 @@ exports.createPost = async (req, res) => {
         let media_url = null;
         let pollOptionsJson = null;
 
-        // Debug logging
-        console.log('📝 Creating post...');
-        console.log('  Community ID:', community_id);
-        console.log('  Type:', type);
-        console.log('  Content:', content);
-        console.log('  Has file?:', !!req.file);
-        console.log('  File info:', req.file ? { fieldname: req.file.fieldname, size: req.file.size } : 'NO FILE');
+        // Debug logs
+        console.log('🔧 DEBUG: createPost called');
+        console.log('  community_id:', community_id);
+        console.log('  tutorId:', tutorId);
+        console.log('  req.body keys:', Object.keys(req.body));
+        console.log('  has file?', !!req.file);
+        console.log('  req.file info:', req.file ? { fieldname: req.file.fieldname, originalname: req.file.originalname, size: req.file.size } : 'none');
         console.log('  Poll options string:', poll_options);
 
         // Validate and set type - only allow valid values
