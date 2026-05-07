@@ -17,6 +17,13 @@ const upload = multer({
 // For now, we just use protect, and authorize('tutor') if applicable.
 // If role is different, adjust accordingly.
 router.use(protect);
+
+// Test route - no upload needed
+router.get('/test', (req, res) => {
+  console.log('✅ Test route hit - authentication working');
+  res.json({ message: 'Tutor routes are working', user: req.user });
+});
+
 // router.use(authorize('tutor')); // Uncomment and adjust role string if roleMiddleware is needed
 
 // 1. Community Management
@@ -31,7 +38,16 @@ router.get('/requests', tutorCommunityController.getPendingRequests);
 router.put('/requests/:membership_id', tutorCommunityController.updateRequestStatus);
 
 // 3. Content Publishing
-router.post('/communities/:id/posts', upload.single('material'), tutorCommunityController.createPost);
+// Debug logging middleware
+router.post('/communities/:id/posts', (req, res, next) => {
+  console.log('📤 POST /communities/:id/posts hit');
+  console.log('  Community ID:', req.params.id);
+  console.log('  Has file:', !!req.file);
+  console.log('  Body:', req.body);
+  console.log('  User:', req.user);
+  next();
+}, upload.single('material'), tutorCommunityController.createPost);
+
 router.put('/posts/:id/pin', tutorCommunityController.pinPost);
 router.post('/communities/:id/deadlines', tutorCommunityController.createDeadline);
 
