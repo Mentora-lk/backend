@@ -13,6 +13,24 @@ async function updateDb() {
             );
         `);
         console.log("Successfully created post_reactions table.");
+
+        // Add poll_options column to posts table if it doesn't exist
+        console.log("Checking if poll_options column exists in posts table...");
+        const checkColumn = await db.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'posts' AND column_name = 'poll_options'
+        `);
+        
+        if (checkColumn.rows.length === 0) {
+            console.log("Adding poll_options column to posts table...");
+            await db.query(`
+                ALTER TABLE posts 
+                ADD COLUMN IF NOT EXISTS poll_options JSONB
+            `);
+            console.log("Successfully added poll_options column to posts table.");
+        } else {
+            console.log("poll_options column already exists in posts table.");
+        }
     } catch (error) {
         console.error("Error updating database:", error);
     } finally {

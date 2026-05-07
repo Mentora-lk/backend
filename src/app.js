@@ -29,13 +29,6 @@ app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 // Community Module
 app.use('/api/student', studentCommunityRoutes);
 
-// Health Check
-app.get('/', (req, res) => {
-    res.send('Mentora API is running...');
-});
-
-module.exports = app;
-
 const db = require('./config/db');
 
 // TEMPORARY: Debug route to check user account status
@@ -80,3 +73,10 @@ app.get('/api/db-status', async (req, res) => {
         });
     }
 });
+
+// Health Check
+app.get('/', (req, res) => {
+    res.send('Mentora API is running...');
+});
+
+module.exports = app;

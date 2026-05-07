@@ -7,6 +7,7 @@ const {
   getMyDeadlines,
   getCommunityFeed,
   togglePostReaction,
+  downloadMaterial,
 } = require('../controllers/studentCommunityController');
 const { protect } = require('../middleware/authMiddleware');
 const { restrictTo } = require('../middleware/roleMiddleware');
@@ -33,5 +34,9 @@ router.get('/deadlines', getMyDeadlines);
 // POST /api/student/posts/:id/react
 router.get('/communities/:id/feed', getCommunityFeed);
 router.post('/posts/:id/react', togglePostReaction);
+
+// ── Material Download ─────────────────────────────────────────────────────────
+// GET  /api/student/posts/:id/download
+router.get('/posts/:id/download', downloadMaterial);
 
 module.exports = router;

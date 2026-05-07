@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
 // 1. Community Management
 
@@ -33,7 +34,7 @@ exports.getCommunityPosts = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Community not found' });
         }
         const result = await db.query(
-            `SELECT p.id, p.type, p.content, p.media_url, p.is_pinned, p.created_at,
+            `SELECT p.id, p.type, p.content, p.media_url, p.poll_options, p.is_pinned, p.created_at,
              COALESCE(sp.full_name, tp.full_name, 'Unknown User') as author_name, u.role as author_role
              FROM posts p
              JOIN users u ON p.author_id = u.id
@@ -197,12 +198,38 @@ exports.createPost = async (req, res) => {
     try {
         const tutorId = req.user.id;
         const { id: community_id } = req.params;
-        const { type, content, media_url, is_pinned } = req.body;
+        const { type, content, is_pinned, poll_options } = req.body;
+        let media_url = null;
+        let pollOptionsJson = null;
+
+        // Handle file upload if material is attached
+        if (req.file) {
+            try {
+                media_url = await uploadToCloudinary(req.file.buffer, 'tutor_community_materials');
+            } catch (uploadError) {
+                console.error('Error uploading to Cloudinary:', uploadError);
+                return res.status(500).json({ 
+                    status: 'error', 
+                    message: 'Failed to upload material',
+                    details: uploadError.message 
+                });
+            }
+        }
+
+        // Parse poll options if provided
+        if (poll_options) {
+            try {
+                pollOptionsJson = typeof poll_options === 'string' ? JSON.parse(poll_options) : poll_options;
+            } catch (e) {
+                console.error('Error parsing poll options:', e);
+                pollOptionsJson = null;
+            }
+        }
         
         const result = await db.query(
-            `INSERT INTO posts (community_id, author_id, type, content, media_url, is_pinned, created_at) 
-             VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *`,
-            [community_id, tutorId, type, content, media_url, is_pinned || false]
+            `INSERT INTO posts (community_id, author_id, type, content, media_url, poll_options, is_pinned, created_at) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *`,
+            [community_id, tutorId, type, content, media_url, pollOptionsJson ? JSON.stringify(pollOptionsJson) : null, is_pinned || false]
         );
         
         const newPostData = result.rows[0];
@@ -261,5 +288,61 @@ exports.createDeadline = async (req, res) => {
     } catch (error) {
         console.error('Error creating deadline:', error);
         res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
+
+// 4. Download Material
+exports.downloadMaterial = async (req, res) => {
+    try {
+        const { id: post_id } = req.params;
+        const userId = req.user.id;
+        
+        // Fetch post details
+        const postResult = await db.query(
+            `SELECT p.id, p.media_url, p.community_id, c.tutor_id
+             FROM posts p
+             JOIN communities c ON p.community_id = c.id
+             WHERE p.id = $1`,
+            [post_id]
+        );
+        
+        if (postResult.rows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Post not found' });
+        }
+        
+        const post = postResult.rows[0];
+        
+        if (!post.media_url) {
+            return res.status(404).json({ status: 'error', message: 'No material attached to this post' });
+        }
+        
+        // Verify user is either the tutor or an approved student member
+        const memberResult = await db.query(
+            `SELECT cm.status FROM community_memberships cm
+             WHERE cm.community_id = $1 AND cm.student_id = $2 AND cm.status = 'approved'`,
+            [post.community_id, userId]
+        );
+        
+        const isTutor = post.tutor_id === userId;
+        const isApprovedMember = memberResult.rows.length > 0;
+        
+        if (!isTutor && !isApprovedMember) {
+            return res.status(403).json({ 
+                status: 'error', 
+                message: 'You do not have permission to download this material' 
+            });
+        }
+        
+        // Redirect to Cloudinary URL for download
+        res.status(200).json({ 
+            status: 'success', 
+            data: { 
+                download_url: post.media_url,
+                message: 'Click the URL to download the material'
+            }
+        });
+    } catch (error) {
+        console.error('Error downloading material:', error);
+        res.status(500).json({ status: 'error', message: error.message });
     }
 };

@@ -1,7 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const tutorCommunityController = require('../controllers/tutorCommunityController');
 const { protect, authorize } = require('../middleware/authMiddleware');
+
+// Configure multer for file uploads (memory storage for Cloudinary)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
 
 // Base route: /api/tutor
 
@@ -24,8 +31,11 @@ router.get('/requests', tutorCommunityController.getPendingRequests);
 router.put('/requests/:membership_id', tutorCommunityController.updateRequestStatus);
 
 // 3. Content Publishing
-router.post('/communities/:id/posts', tutorCommunityController.createPost);
+router.post('/communities/:id/posts', upload.single('material'), tutorCommunityController.createPost);
 router.put('/posts/:id/pin', tutorCommunityController.pinPost);
 router.post('/communities/:id/deadlines', tutorCommunityController.createDeadline);
+
+// 4. Download Material
+router.get('/posts/:id/download', tutorCommunityController.downloadMaterial);
 
 module.exports = router;
