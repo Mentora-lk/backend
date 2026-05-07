@@ -198,16 +198,40 @@ exports.createPost = async (req, res) => {
     try {
         const tutorId = req.user.id;
         const { id: community_id } = req.params;
-        const { type, content, is_pinned, poll_options } = req.body;
+        let { type, content, is_pinned, poll_options } = req.body;
         let media_url = null;
         let pollOptionsJson = null;
+
+        // Debug logging
+        console.log('📝 Creating post...');
+        console.log('  Community ID:', community_id);
+        console.log('  Type:', type);
+        console.log('  Content:', content);
+        console.log('  Has file?:', !!req.file);
+        console.log('  File info:', req.file ? { fieldname: req.file.fieldname, size: req.file.size } : 'NO FILE');
+        console.log('  Poll options string:', poll_options);
+
+        // Validate required fields
+        if (!type) {
+            type = 'resource'; // Default type
+            console.log('⚠️  Type not provided, using default: resource');
+        }
+
+        if (!content) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Content is required'
+            });
+        }
 
         // Handle file upload if material is attached
         if (req.file) {
             try {
-                media_url = await uploadToCloudinary(req.file.buffer, 'tutor_community_materials');
+                console.log('🔄 Uploading to Cloudinary...');
+                media_url = await uploadToCloudinary(req.file.buffer, 'tutor_community_materials', req.file.originalname);
+                console.log('✅ Upload successful:', media_url);
             } catch (uploadError) {
-                console.error('Error uploading to Cloudinary:', uploadError);
+                console.error('❌ Error uploading to Cloudinary:', uploadError);
                 return res.status(500).json({ 
                     status: 'error', 
                     message: 'Failed to upload material',
@@ -219,13 +243,16 @@ exports.createPost = async (req, res) => {
         // Parse poll options if provided
         if (poll_options) {
             try {
+                console.log('📊 Parsing poll options:', poll_options);
                 pollOptionsJson = typeof poll_options === 'string' ? JSON.parse(poll_options) : poll_options;
+                console.log('✅ Poll options parsed:', pollOptionsJson);
             } catch (e) {
-                console.error('Error parsing poll options:', e);
+                console.error('❌ Error parsing poll options:', e);
                 pollOptionsJson = null;
             }
         }
         
+        console.log('💾 Inserting into database...');
         const result = await db.query(
             `INSERT INTO posts (community_id, author_id, type, content, media_url, poll_options, is_pinned, created_at) 
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *`,
@@ -233,6 +260,7 @@ exports.createPost = async (req, res) => {
         );
         
         const newPostData = result.rows[0];
+        console.log('✅ Post created with ID:', newPostData.id);
         
         const io = req.app.get('io');
         if (io) {
@@ -241,7 +269,7 @@ exports.createPost = async (req, res) => {
         
         res.status(201).json({ status: 'success', data: newPostData });
     } catch (error) {
-        console.error('Error creating post:', error);
+        console.error('❌ Error creating post:', error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 };

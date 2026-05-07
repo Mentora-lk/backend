@@ -38,15 +38,21 @@ router.get('/requests', tutorCommunityController.getPendingRequests);
 router.put('/requests/:membership_id', tutorCommunityController.updateRequestStatus);
 
 // 3. Content Publishing
-// Debug logging middleware
-router.post('/communities/:id/posts', (req, res, next) => {
+// Multer accepts ANY file field name
+router.post('/communities/:id/posts', upload.any(), (req, res, next) => {
   console.log('📤 POST /communities/:id/posts hit');
   console.log('  Community ID:', req.params.id);
-  console.log('  Has file:', !!req.file);
+  console.log('  Files received:', req.files?.length || 0);
   console.log('  Body:', req.body);
   console.log('  User:', req.user);
+  
+  // Convert any file to req.file for backward compatibility
+  if (req.files && req.files.length > 0) {
+    req.file = req.files[0];
+  }
+  
   next();
-}, upload.single('material'), tutorCommunityController.createPost);
+}, tutorCommunityController.createPost);
 
 router.put('/posts/:id/pin', tutorCommunityController.pinPost);
 router.post('/communities/:id/deadlines', tutorCommunityController.createDeadline);
