@@ -211,10 +211,11 @@ exports.createPost = async (req, res) => {
         console.log('  File info:', req.file ? { fieldname: req.file.fieldname, size: req.file.size } : 'NO FILE');
         console.log('  Poll options string:', poll_options);
 
-        // Validate required fields
-        if (!type) {
-            type = 'resource'; // Default type
-            console.log('⚠️  Type not provided, using default: resource');
+        // Validate and set type - only allow valid values
+        const validTypes = ['announcement', 'poll', 'document'];
+        if (!type || !validTypes.includes(type)) {
+            type = 'announcement'; // Default to announcement
+            console.log('⚠️  Type not provided or invalid, using default: announcement');
         }
 
         if (!content) {
