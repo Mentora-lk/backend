@@ -17,16 +17,19 @@ const pool = new Pool(
       }
 );
 
-pool.on('connect', () => {
-    console.log('Connected to PostgreSQL Database');
-});
-
-pool.on('error', (err) => {
-    console.error('Unexpected error on idle client', err);
-    process.exit(-1);
-});
+const connectDatabase = async () => {
+  try {
+    await pool.query('SELECT NOW()');
+    console.log('PostgreSQL connected successfully');
+    return pool;
+  } catch (error) {
+    console.error('PostgreSQL connection error:', error);
+    process.exit(1);
+  }
+};
 
 module.exports = {
   pool,
   query: (text, params) => pool.query(text, params),
+  connectDatabase,
 };

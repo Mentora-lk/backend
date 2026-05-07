@@ -5,6 +5,7 @@ const {
   getCourseById,
   getCourseReviews,
   addReview,
+  getPlatformStats,
 } = require('../controllers/courseController');
 const { protect } = require('../middleware/authMiddleware');
 const { restrictTo } = require('../middleware/roleMiddleware');
@@ -12,6 +13,7 @@ const { restrictTo } = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 // Public routes — no login needed to browse
+router.get('/stats',         getPlatformStats);
 router.get('/',              getCourses);
 router.get('/:id',           getCourseById);
 router.get('/:id/reviews',   getCourseReviews);

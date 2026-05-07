@@ -30,8 +30,17 @@ app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 app.use('/api/student', studentCommunityRoutes);
 
 // Health Check
-app.get('/', (req, res) => {
-    res.send('Mentora API is running...');
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        message: 'Server is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' });
 });
 
 module.exports = app;

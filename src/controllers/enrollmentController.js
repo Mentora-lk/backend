@@ -101,33 +101,39 @@ const getMyEnrollments = async (req, res, next) => {
   try {
     const { status } = req.query;
 
-    // TEMP until auth is connected
-    const studentId = 1;
+    let where = ['e.student_id = $1'];
+    let params = [req.user.id];
 
-    let query = `
-      SELECT 
+    if (status && status !== 'all') {
+      where.push(`e.status = $2`);
+      params.push(status);
+    }
+
+    const result = await pool.query(
+      `SELECT 
         e.*,
         c.title,
         c.subject,
         c.mode,
         c.location,
         c.fee,
-        c.image
-      FROM enrollments e
-      JOIN courses c ON e.class_id = c.id
-      WHERE e.student_id = $1
-    `;
-
-    const params = [studentId];
-
-    if (status && status !== 'all') {
-      params.push(status);
-      query += ` AND e.status = $${params.length}`;
-    }
-
-    query += ` ORDER BY e."createdAt" DESC`;
-
-    const result = await pool.query(query, params);
+        c.image,
+        c.average_rating,
+        c.max_students,
+        c.schedule,
+        c.badge,
+        u.name AS tutor_name,
+        t.id   AS tutor_id,
+        t.avatar AS tutor_avatar,
+        t.is_verified AS tutor_is_verified
+       FROM enrollments e
+       LEFT JOIN courses c ON e.class_id = c.id
+       LEFT JOIN tutors  t ON c.tutor_id = t.id
+       LEFT JOIN users   u ON t.user_id  = u.id
+       WHERE ${where.join(' AND ')}
+       ORDER BY e."createdAt" DESC`,
+      params
+    );
 
     res.json(result.rows);
   } catch (err) {
@@ -138,35 +144,41 @@ const getMyEnrollments = async (req, res, next) => {
 // GET /api/enrollments/schedule
 const getMySchedule = async (req, res, next) => {
   try {
-    // TEMP until auth is connected
-    const studentId = 1;
-
     const result = await pool.query(
       `SELECT 
-        e.*,
-        c.id AS course_id,
+        e.id          AS enrollment_id,
+        e.selected_day,
+        e.selected_time,
+        e.preferred_mode,
+        e.status,
+        c.id          AS course_id,
         c.title,
         c.subject,
         c.schedule,
         c.mode,
-        c.location
+        c.location,
+        u.name        AS tutor_name
        FROM enrollments e
-       JOIN courses c ON e.class_id = c.id
+       LEFT JOIN courses c ON e.class_id = c.id
+       LEFT JOIN tutors  t ON c.tutor_id = t.id
+       LEFT JOIN users   u ON t.user_id  = u.id
        WHERE e.student_id = $1
-       AND e.status IN ('approved', 'active')`,
-      [studentId]
+         AND e.status IN ('approved', 'active')`,
+      [req.user.id]
     );
 
-    const sessions = result.rows.map((e) => ({
-      enrollmentId: e.id,
-      courseId: e.course_id,
-      title: e.title,
-      subject: e.subject,
-      mode: e.preferred_mode || e.mode,
-      location: e.location,
-      selectedDay: e.selected_day,
-      selectedTime: e.selected_time,
-      schedule: e.schedule,
+    // Shape for schedule page
+    const sessions = result.rows.map(row => ({
+      enrollmentId: row.enrollment_id,
+      courseId:     row.course_id,
+      title:        row.title,
+      subject:      row.subject,
+      tutor:        row.tutor_name,
+      mode:         row.preferred_mode || row.mode,
+      location:     row.location,
+      selectedDay:  row.selected_day,
+      selectedTime: row.selected_time,
+      schedule:     row.schedule,
     }));
 
     res.json(sessions);
