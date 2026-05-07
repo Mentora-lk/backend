@@ -78,6 +78,55 @@ const getCourses = async (req, res, next) => {
   }
 };
 
+// POST /api/courses (Tutor only)
+const createCourse = async (req, res, next) => {
+  try {
+    const { title, subject, description, fee, schedule, medium, mode, location, max_students, image } = req.body;
+    
+    // Validate required fields
+    if (!title || !subject || !fee) {
+      return res.status(400).json({ message: 'Title, subject, and fee are required' });
+    }
+
+    const tutorId = req.user.id; // From authMiddleware
+
+    const result = await pool.query(
+      `INSERT INTO courses 
+       (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, "createdAt", "updatedAt") 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()) RETURNING *`,
+      [tutorId, title, subject, description, fee, schedule, mode || 'both', location || 'Remote', max_students || 50, 'active', image || '']
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/courses/:id (Tutor only)
+const deleteCourse = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id; // From authMiddleware
+
+    // Verify course belongs to tutor
+    const courseResult = await pool.query('SELECT * FROM courses WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
+    
+    if (courseResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+
+    // Delete enrollments for this course first due to foreign key constraints
+    await pool.query('DELETE FROM enrollments WHERE class_id = $1', [courseId]);
+    await pool.query('DELETE FROM reviews WHERE course_id = $1', [courseId]);
+    await pool.query('DELETE FROM courses WHERE id = $1', [courseId]);
+
+    res.json({ message: 'Course deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/courses/:id
 const getCourseById = async (req, res, next) => {
   try {
@@ -156,4 +205,6 @@ module.exports = {
   getCourseById,
   getCourseReviews,
   addReview,
+  createCourse,
+  deleteCourse,
 };

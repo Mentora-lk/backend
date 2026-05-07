@@ -5,6 +5,8 @@ const {
   getCourseById,
   getCourseReviews,
   addReview,
+  createCourse,
+  deleteCourse,
 } = require('../controllers/courseController');
 const { protect } = require('../middleware/authMiddleware');
 const { restrictTo } = require('../middleware/roleMiddleware');
@@ -18,5 +20,9 @@ router.get('/:id/reviews',   getCourseReviews);
 
 // Protected — only enrolled students can post a review
 router.post('/:id/reviews',  protect, restrictTo('student'), addReview);
+
+// Protected - only tutors can create/delete a course
+router.post('/', protect, restrictTo('tutor'), createCourse);
+router.delete('/:id', protect, restrictTo('tutor'), deleteCourse);
 
 module.exports = router;
