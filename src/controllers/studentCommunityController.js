@@ -271,6 +271,61 @@ const togglePostReaction = async (req, res, next) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/student/posts/:id/download
+// Returns download URL for material attached to a post.
+// Student must be an approved member of the community to download.
+// ─────────────────────────────────────────────────────────────────────────────
+const downloadMaterial = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const postId = parseInt(req.params.id, 10);
+
+    // Fetch post details with community info
+    const postResult = await pool.query(
+      `SELECT p.id, p.media_url, p.community_id, p.created_at
+       FROM posts p
+       WHERE p.id = $1`,
+      [postId]
+    );
+
+    if (postResult.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'Post not found' });
+    }
+
+    const post = postResult.rows[0];
+
+    if (!post.media_url) {
+      return res.status(404).json({ status: 'error', message: 'No material attached to this post' });
+    }
+
+    // Verify student is an approved member of the community
+    const memberCheck = await pool.query(
+      `SELECT id FROM community_memberships
+       WHERE community_id = $1 AND student_id = $2 AND status = 'approved'`,
+      [post.community_id, studentId]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        status: 'error', 
+        message: 'You do not have permission to download this material' 
+      });
+    }
+
+    // Return the Cloudinary URL for download
+    res.status(200).json({ 
+      status: 'success', 
+      data: { 
+        download_url: post.media_url,
+        message: 'Click the URL to download the material'
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   discoverCommunities,
   requestCommunityAccess,
@@ -278,4 +333,5 @@ module.exports = {
   getMyDeadlines,
   getCommunityFeed,
   togglePostReaction,
+  downloadMaterial,
 };
