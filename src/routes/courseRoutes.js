@@ -15,6 +15,7 @@ const { restrictTo } = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 // Public routes — no login needed to browse
+router.get('/stats',         getPlatformStats);
 router.get('/',              getCourses);
 router.get('/:id',           getCourseById);
 router.get('/:id/reviews',   getCourseReviews);
