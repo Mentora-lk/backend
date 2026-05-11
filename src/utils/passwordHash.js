@@ -1,9 +1,11 @@
-// Password utility functions
+const bcrypt = require('bcryptjs');
+
 module.exports = {
-  hashPassword: (password) => {
-    // Placeholder
+  hashPassword: async (password) => {
+    return await bcrypt.hash(password, 10);
   },
-  comparePassword: (password, hash) => {
-    // Placeholder
+
+  comparePassword: async (password, hash) => {
+    return await bcrypt.compare(password, hash);
   },
 };
