@@ -12,7 +12,7 @@ const getDashboardData = async (req, res, next) => {
         c.average_rating as rating, c.status, c.max_students as "totalSlots", 
         c.schedule as "nextSession", c.image,
         (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
-      FROM courses c
+      FROM PoatAD c
       WHERE c.tutor_id = $1
       ORDER BY c."createdAt" DESC
     `, [userId]);
@@ -24,7 +24,7 @@ const getDashboardData = async (req, res, next) => {
       SELECT 
         e.id, e.full_name as name, c.subject, e."createdAt"
       FROM enrollments e
-      JOIN courses c ON e.class_id = c.id
+      JOIN PoatAD c ON e.class_id = c.id
       WHERE c.tutor_id = $1 AND e.status = 'requested'
       ORDER BY e."createdAt" DESC
       LIMIT 5
@@ -89,7 +89,7 @@ const getTutorRequests = async (req, res, next) => {
         e.id, e.full_name as name, c.subject, c.title as class, 
         e."createdAt" as date, e.message, e.status
       FROM enrollments e
-      JOIN courses c ON e.class_id = c.id
+      JOIN PoatAD c ON e.class_id = c.id
       WHERE c.tutor_id = $1
       ORDER BY e."createdAt" DESC
     `, [userId]);
@@ -133,8 +133,97 @@ const getAllTutors = (req, res) => {
   res.json({ message: 'Get all tutors' });
 };
 
+
+// Get tutor profile data
+const getProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch profile data joining users and tutor_profiles (using LEFT JOIN in case profile doesn't exist yet)
+    const result = await pool.query(`
+      SELECT 
+        u.email,
+        u.role,
+        COALESCE(tp.full_name, '') as name,
+        COALESCE(tp.city, '') as location,
+        COALESCE(tp.experience, '') as experience,
+        COALESCE(tp.university, '') as university,
+        COALESCE(tp.degree_title, '') as degree,
+        COALESCE(tp.description, '') as bio,
+        COALESCE(tp.subject, '') as subject,
+        COALESCE(tp.phone, '') as phone,
+        COALESCE(tp.fee, '') as fee
+      FROM users u
+      LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
+      WHERE u.id = $1
+    `, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const profile = result.rows[0];
+    
+    res.json({
+      name: profile.name || '',
+      email: profile.email,
+      phone: profile.phone || '',
+      subject: profile.subject || '',
+      location: profile.location || '',
+      experience: profile.experience || '',
+      education: profile.university || '',
+      bio: profile.bio || '',
+      fee: profile.fee || ''
+    });
+  } catch (err) {
+    console.error('Error in getProfile:', err);
+    next(err);
+  }
+};
+
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { name, phone, subject, location, experience, education, bio, fee } = req.body;
+
+    // Check if profile exists
+    const checkProfile = await pool.query('SELECT id FROM tutor_profiles WHERE user_id = $1', [userId]);
+
+    if (checkProfile.rows.length > 0) {
+      // Update existing
+      await pool.query(`
+        UPDATE tutor_profiles 
+        SET 
+          full_name = $1,
+          city = $2,
+          experience = $3,
+          description = $4,
+          subject = $5,
+          phone = $6,
+          fee = $7,
+          university = $8
+        WHERE user_id = $9
+      `, [name, location, experience, bio, subject, phone, fee, education, userId]);
+    } else {
+      // Create new
+      await pool.query(`
+        INSERT INTO tutor_profiles (user_id, full_name, city, experience, description, subject, phone, fee, university)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [userId, name, location, experience, bio, subject, phone, fee, education]);
+    }
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (err) {
+    console.error('Error in updateProfile:', err);
+    next(err);
+  }
+};
+
 module.exports = {
   getAllTutors,
   getDashboardData,
-  getTutorRequests
+  getTutorRequests,
+  getProfile,
+  updateProfile
 };
+

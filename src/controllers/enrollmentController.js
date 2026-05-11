@@ -27,7 +27,7 @@ const createEnrollment = async (req, res, next) => {
 
     // Check course exists
     const courseResult = await pool.query(
-      'SELECT * FROM courses WHERE id = $1',
+      'SELECT * FROM PoatAD WHERE id = $1',
       [classId]
     );
 
@@ -114,7 +114,7 @@ const getMyEnrollments = async (req, res, next) => {
         c.fee,
         c.image
       FROM enrollments e
-      JOIN courses c ON e.class_id = c.id
+      JOIN PoatAD c ON e.class_id = c.id
       WHERE e.student_id = $1
     `;
 
@@ -151,7 +151,7 @@ const getMySchedule = async (req, res, next) => {
         c.mode,
         c.location
        FROM enrollments e
-       JOIN courses c ON e.class_id = c.id
+       JOIN PoatAD c ON e.class_id = c.id
        WHERE e.student_id = $1
        AND e.status IN ('approved', 'active')`,
       [studentId]
