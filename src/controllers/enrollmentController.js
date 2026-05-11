@@ -27,7 +27,7 @@ const createEnrollment = async (req, res, next) => {
 
     // Check course exists
     const courseResult = await pool.query(
-      'SELECT * FROM courses WHERE id = $1',
+      'SELECT * FROM PoatAD WHERE id = $1',
       [classId]
     );
 
@@ -117,23 +117,22 @@ const getMyEnrollments = async (req, res, next) => {
         c.mode,
         c.location,
         c.fee,
-        c.image,
-        c.average_rating,
-        c.max_students,
-        c.schedule,
-        c.badge,
-        u.name AS tutor_name,
-        t.id   AS tutor_id,
-        t.avatar AS tutor_avatar,
-        t.is_verified AS tutor_is_verified
-       FROM enrollments e
-       LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutors  t ON c.tutor_id = t.id
-       LEFT JOIN users   u ON t.user_id  = u.id
-       WHERE ${where.join(' AND ')}
-       ORDER BY e."createdAt" DESC`,
-      params
-    );
+        c.image
+      FROM enrollments e
+      JOIN PoatAD c ON e.class_id = c.id
+      WHERE e.student_id = $1
+    `;
+
+    const params = [studentId];
+
+    if (status && status !== 'all') {
+      params.push(status);
+      query += ` AND e.status = $${params.length}`;
+    }
+
+    query += ` ORDER BY e."createdAt" DESC`;
+
+    const result = await pool.query(query, params);
 
     res.json(result.rows);
   } catch (err) {
@@ -159,9 +158,7 @@ const getMySchedule = async (req, res, next) => {
         c.location,
         u.name        AS tutor_name
        FROM enrollments e
-       LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutors  t ON c.tutor_id = t.id
-       LEFT JOIN users   u ON t.user_id  = u.id
+       JOIN PoatAD c ON e.class_id = c.id
        WHERE e.student_id = $1
          AND e.status IN ('approved', 'active')`,
       [req.user.id]

@@ -12,7 +12,10 @@ const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: true, // Reflects the request origin
+    credentials: true
+}));
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text()); // Parse text responses
