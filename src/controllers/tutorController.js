@@ -11,8 +11,8 @@ const getDashboardData = async (req, res, next) => {
         c.id, c.title, c.subject, c.location, c.mode, c.fee, 
         c.average_rating as rating, c.status, c.max_students as "totalSlots", 
         c.schedule as "nextSession", c.image,
-        (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
-      FROM PoatAD c
+        (SELECT COUNT(*) FROM requests e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
+      FROM poatad c
       WHERE c.tutor_id = $1
       ORDER BY c."createdAt" DESC
     `, [userId]);
@@ -23,9 +23,9 @@ const getDashboardData = async (req, res, next) => {
     const requestsResult = await pool.query(`
       SELECT 
         e.id, e.full_name as name, c.subject, e."createdAt"
-      FROM enrollments e
-      JOIN PoatAD c ON e.class_id = c.id
-      WHERE c.tutor_id = $1 AND e.status = 'requested'
+      FROM requests e
+      JOIN poatad c ON e.class_id = c.id
+      WHERE c.tutor_id = $1 AND e.status = 'pending'
       ORDER BY e."createdAt" DESC
       LIMIT 5
     `, [userId]);
@@ -87,9 +87,11 @@ const getTutorRequests = async (req, res, next) => {
     const requestsResult = await pool.query(`
       SELECT 
         e.id, e.full_name as name, c.subject, c.title as class, 
-        e."createdAt" as date, e.message, e.status
-      FROM enrollments e
-      JOIN PoatAD c ON e.class_id = c.id
+        e."createdAt" as date, e.message, e.status,
+        e.email, e.phone, e.school, e.grade, e.preferred_mode,
+        e.selected_day, e.selected_time
+      FROM requests e
+      JOIN poatad c ON e.class_id = c.id
       WHERE c.tutor_id = $1
       ORDER BY e."createdAt" DESC
     `, [userId]);
@@ -118,7 +120,15 @@ const getTutorRequests = async (req, res, next) => {
         message: req.message || 'I would like to join this class.',
         status: req.status === 'requested' ? 'pending' : req.status, // Map 'requested' to 'pending' for UI
         avatar: req.name ? req.name.charAt(0).toUpperCase() : 'U',
-        color: color
+        color: color,
+        // Added details
+        email: req.email,
+        phone: req.phone,
+        school: req.school,
+        grade: req.grade,
+        preferredMode: req.preferred_mode,
+        selectedDay: req.selected_day,
+        selectedTime: req.selected_time
       };
     });
 

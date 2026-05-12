@@ -8,6 +8,7 @@ const {
   createCourse,
   deleteCourse,
   updateCourse,
+  getPlatformStats,
 } = require('../controllers/courseController');
 const { protect } = require('../middleware/authMiddleware');
 const { restrictTo } = require('../middleware/roleMiddleware');
