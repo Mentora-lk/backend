@@ -40,6 +40,10 @@ const initSocket = (httpServer, app) => {
   io.on('connection', (socket) => {
     console.log(`[Socket.io] User connected: ${socket.user.id} (socket: ${socket.id})`);
 
+    // Auto-join a personal room for direct messages
+    socket.join(`user:${socket.user.id}`);
+    console.log(`[Socket.io] User ${socket.user.id} joined DM room: user:${socket.user.id}`);
+
     /**
      * Event: join_community
      * Payload: { communityId: string | number }

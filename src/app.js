@@ -8,6 +8,7 @@ const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
+const messageRoutes = require('./routes/messageRoutes');
 
 const app = express();
 
@@ -28,6 +29,9 @@ app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 
 // Community Module
 app.use('/api/student', studentCommunityRoutes);
+
+// Messaging Module
+app.use('/api/messages', messageRoutes);
 
 // Health Check
 app.get('/', (req, res) => {
@@ -79,4 +83,13 @@ app.get('/api/db-status', async (req, res) => {
             error: error.message
         });
     }
+});
+
+// Global error handler — must be LAST
+app.use((err, req, res, next) => {
+    console.error(`[ERROR] ${req.method} ${req.path}:`, err.message || err);
+    res.status(err.status || 500).json({
+        message: err.message || 'Internal Server Error',
+        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+    });
 });
