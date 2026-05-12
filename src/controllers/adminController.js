@@ -1,7 +1,5 @@
 const { pool } = require('../config/db');
-
 module.exports = {
-
   // GET /api/admin/dashboard
   getDashboard: async (req, res) => {
     try {
@@ -9,7 +7,6 @@ module.exports = {
       const totalTutors   = await pool.query("SELECT COUNT(*) FROM tutor_profiles");
       const totalStudents = await pool.query("SELECT COUNT(*) FROM student_profiles");
       const totalCourses  = await pool.query("SELECT COUNT(*) FROM courses");
-
       res.json({
         totalUsers:    parseInt(totalUsers.rows[0].count),
         totalTutors:   parseInt(totalTutors.rows[0].count),
@@ -54,12 +51,37 @@ module.exports = {
     }
   },
 
+  // GET /api/admin/sessions (READ ONLY from enrollments)
+  getSessions: async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           e.id,
+           e.full_name   AS student,
+           e.preferred_mode AS mode,
+           e.selected_day,
+           e.selected_time,
+           e.status,
+           e.grade,
+           e.school,
+           e.sessions_attended,
+           e."createdAt"
+         FROM enrollments e
+         ORDER BY e."createdAt" DESC`
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Get sessions error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // GET /api/admin/payments
   getPayments: async (req, res) => {
     try {
       const result = await pool.query(
-  `SELECT * FROM enrollments ORDER BY "createdAt" DESC`
-);
+        `SELECT * FROM enrollments ORDER BY "createdAt" DESC`
+      );
       res.json(result.rows);
     } catch (err) {
       console.error('Get payments error:', err);
