@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+//!import route files(but not activated)
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const tutorRoutes = require('./routes/tutorRoutes');
@@ -11,12 +12,12 @@ const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 
 const app = express();
 
-// Middleware
+//! configure Middleware
 app.use(cors());
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+//! Activate and use these routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tutors', tutorRoutes);

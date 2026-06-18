@@ -1,6 +1,6 @@
 const { pool } = require('../config/db');
 
-// GET /api/courses
+//! GET /api/courses
 const getCourses = async (req, res, next) => {
   try {
     const {
@@ -109,7 +109,7 @@ const getCourses = async (req, res, next) => {
   }
 };
 
-// GET /api/courses/:id
+//! GET /api/courses/:id
 const getCourseById = async (req, res, next) => {
   try {
     const courseResult = await pool.query(
@@ -173,7 +173,7 @@ const getCourseById = async (req, res, next) => {
   }
 };
 
-// GET reviews
+//! GET reviews
 const getCourseReviews = async (req, res, next) => {
   try {
     // First get the tutor_id for this course
@@ -211,7 +211,7 @@ const getCourseReviews = async (req, res, next) => {
   }
 };
 
-// POST review
+//! POST review
 const addReview = async (req, res, next) => {
   try {
     const { rating, comment } = req.body;
@@ -254,7 +254,7 @@ const addReview = async (req, res, next) => {
   }
 };
 
-// GET /api/stats — platform statistics for landing page hero
+//! GET /api/stats — platform statistics for landing page hero
 const getPlatformStats = async (req, res, next) => {
   try {
     const [tutors, students, subjects] = await Promise.all([

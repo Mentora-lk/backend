@@ -1,4 +1,4 @@
-// Course Routes
+//! Course Routes
 const express = require('express');
 const {
   getCourses,
@@ -12,13 +12,13 @@ const { restrictTo } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 
-// Public routes — no login needed to browse
+//! Public routes — no login needed to browse
 router.get('/stats',         getPlatformStats);
 router.get('/',              getCourses);
 router.get('/:id',           getCourseById);
 router.get('/:id/reviews',   getCourseReviews);
 
-// Protected — only enrolled students can post a review
+//! Protected — only enrolled students can post a review
 router.post('/:id/reviews',  protect, restrictTo('student'), addReview);
 
 module.exports = router;

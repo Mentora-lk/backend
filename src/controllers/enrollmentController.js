@@ -2,7 +2,7 @@
 
 const { pool } = require('../config/db');
 
-// POST /api/enrollments
+//!POST /api/enrollments
 const createEnrollment = async (req, res, next) => {
   try {
     const {
@@ -22,8 +22,8 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'Missing required enrollment fields' });
     }
 
-    // TEMP until auth is connected
-    const studentId = 1;
+    // Use authenticated user's ID, fallback to 1 if not authenticated
+    const studentId = req.user?.id || 1;
 
     // Check course exists
     const courseResult = await pool.query(
@@ -65,7 +65,7 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'This class is full' });
     }
 
-    // Create enrollment
+    //! Create enrollment
     const bookingResult = await pool.query(
       `INSERT INTO enrollments 
         (student_id, class_id, status, full_name, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
@@ -96,11 +96,10 @@ const createEnrollment = async (req, res, next) => {
   }
 };
 
-// GET /api/enrollments/mine
+//! GET /api/enrollments/mine
 const getMyEnrollments = async (req, res, next) => {
   try {
     const { status } = req.query;
-
     let where = ['e.student_id = $1'];
     let params = [req.user.id];
 
@@ -122,14 +121,12 @@ const getMyEnrollments = async (req, res, next) => {
         c.max_students,
         c.schedule,
         c.badge,
-        u.name AS tutor_name,
-        t.id   AS tutor_id,
-        t.avatar AS tutor_avatar,
-        t.is_verified AS tutor_is_verified
+        tp.full_name AS tutor_name,
+        tp.id   AS tutor_id,
+        tp.profile_picture_url AS tutor_avatar
        FROM enrollments e
        LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutors  t ON c.tutor_id = t.id
-       LEFT JOIN users   u ON t.user_id  = u.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
        WHERE ${where.join(' AND ')}
        ORDER BY e."createdAt" DESC`,
       params
@@ -141,7 +138,7 @@ const getMyEnrollments = async (req, res, next) => {
   }
 };
 
-// GET /api/enrollments/schedule
+//! GET /api/enrollments/schedule
 const getMySchedule = async (req, res, next) => {
   try {
     const result = await pool.query(
@@ -157,11 +154,10 @@ const getMySchedule = async (req, res, next) => {
         c.schedule,
         c.mode,
         c.location,
-        u.name        AS tutor_name
+        tp.full_name  AS tutor_name
        FROM enrollments e
        LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutors  t ON c.tutor_id = t.id
-       LEFT JOIN users   u ON t.user_id  = u.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
        WHERE e.student_id = $1
          AND e.status IN ('approved', 'active')`,
       [req.user.id]
@@ -187,7 +183,7 @@ const getMySchedule = async (req, res, next) => {
   }
 };
 
-// PATCH /api/enrollments/:id
+//! PATCH /api/enrollments/:id
 const updateEnrollmentStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
@@ -226,11 +222,11 @@ const updateEnrollmentStatus = async (req, res, next) => {
   }
 };
 
-// DELETE /api/enrollments/:id
+//! DELETE /api/enrollments/:id
 const deleteEnrollment = async (req, res, next) => {
   try {
-    // TEMP until auth is connected
-    const studentId = 1;
+    // Use authenticated user's ID
+    const studentId = req.user.id;
 
     const existingResult = await pool.query(
       'SELECT * FROM enrollments WHERE id = $1',
