@@ -39,6 +39,15 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Root: provide basic API info to avoid generic 404 on '/'
+app.get('/', (req, res) => {
+    res.json({
+        message: 'API Root - use /api/health or /api/courses',
+        health: '/api/health',
+        courses: '/api/courses'
+    });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });

@@ -7,7 +7,7 @@ const BookingSchema = {
   id: 'SERIAL PRIMARY KEY',
   student_id: 'INTEGER NOT NULL',
   class_id: 'INTEGER NOT NULL REFERENCES courses(id)',
-  status: "VARCHAR(50) DEFAULT 'requested' CHECK (status IN ('requested', 'approved', 'rejected', 'active', 'cancelled'))",
+  status: "VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'requested', 'approved', 'rejected', 'active', 'cancelled'))",
   
   // ── Step 1 fields from enroll page ────────────────
   full_name: 'VARCHAR(255)',

@@ -41,15 +41,18 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'This course is not accepting enrollments' });
     }
 
-    // Prevent duplicate enrollment
+    // Prevent duplicate open requests only
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE student_id = $1 AND class_id = $2',
+      `SELECT * FROM enrollments
+       WHERE student_id = $1
+         AND class_id = $2
+         AND status IN ('pending', 'requested')`,
       [studentId, classId]
     );
 
     if (existingResult.rows.length > 0) {
       return res.status(409).json({
-        message: 'You are already enrolled or have a pending request for this class',
+        message: 'You already have a pending request for this class',
       });
     }
 
@@ -104,8 +107,12 @@ const getMyEnrollments = async (req, res, next) => {
     let params = [req.user.id];
 
     if (status && status !== 'all') {
-      where.push(`e.status = $2`);
-      params.push(status);
+      if (status === 'pending' || status === 'requested') {
+        where.push(`e.status IN ('pending', 'requested')`);
+      } else {
+        where.push(`e.status = $2`);
+        params.push(status);
+      }
     }
 
     const result = await pool.query(
@@ -166,15 +173,15 @@ const getMySchedule = async (req, res, next) => {
     // Shape for schedule page
     const sessions = result.rows.map(row => ({
       enrollmentId: row.enrollment_id,
-      courseId:     row.course_id,
-      title:        row.title,
-      subject:      row.subject,
-      tutor:        row.tutor_name,
-      mode:         row.preferred_mode || row.mode,
-      location:     row.location,
-      selectedDay:  row.selected_day,
+      courseId: row.course_id,
+      title: row.title,
+      subject: row.subject,
+      tutor: row.tutor_name,
+      mode: row.preferred_mode || row.mode,
+      location: row.location,
+      selectedDay: row.selected_day,
       selectedTime: row.selected_time,
-      schedule:     row.schedule,
+      schedule: row.schedule,
     }));
 
     res.json(sessions);
