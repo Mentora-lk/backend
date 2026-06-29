@@ -11,8 +11,8 @@ const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Public — anyone can request enrollment
-router.post("/", createEnrollment);
+// Protected routes — require student authentication to enroll
+router.post("/", protect, createEnrollment);
 
 // Protected routes — require student authentication
 router.get("/me", protect, authorize('student'), getMyEnrollments);
