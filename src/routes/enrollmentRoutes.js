@@ -17,6 +17,7 @@ router.post("/", protect, createEnrollment);
 // Protected routes — require student authentication
 router.get("/me", protect, authorize('student'), getMyEnrollments);
 router.get("/schedule", protect, authorize('student'), getMySchedule);
+router.get("/me/schedule", protect, authorize('student'), getMySchedule);
 router.patch("/:id", protect, updateEnrollmentStatus);
 router.delete("/:id", protect, deleteEnrollment);
 
