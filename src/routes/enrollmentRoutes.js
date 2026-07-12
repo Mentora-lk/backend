@@ -6,10 +6,14 @@ const {
   getMySchedule,
   updateEnrollmentStatus,
   deleteEnrollment,
+  testEnrollmentEmail,
 } = require('../controllers/enrollmentController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+// Public test route for email functionality via Postman
+router.post("/test-email", testEnrollmentEmail);
 
 // Protected routes — require student authentication to enroll
 router.post("/", protect, createEnrollment);

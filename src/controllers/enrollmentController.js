@@ -1,6 +1,8 @@
 // src/controllers/enrollmentController.js
 
 const { pool } = require('../config/db');
+const sendEmail = require('../utils/sendEmail');
+const enrollmentEmailTemplate = require('../utils/enrollmentEmailTemplate');
 
 //!POST /api/enrollments
 const createEnrollment = async (req, res, next) => {
@@ -90,9 +92,55 @@ const createEnrollment = async (req, res, next) => {
       ]
     );
 
+    const enrollment = bookingResult.rows[0];
+
+    // ── Send email notification to tutor ──────────────────────────────────
+    try {
+      // Get course info and tutor email/name from tutor_profiles table
+      const courseResult = await pool.query(
+        `SELECT c.title, c.tutor_id, tp.email AS tutor_email, tp.full_name AS tutor_name 
+         FROM courses c 
+         LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id 
+         WHERE c.id = $1`,
+        [classId]
+      );
+
+      if (courseResult.rows.length > 0) {
+        const { title, tutor_email, tutor_name } = courseResult.rows[0];
+
+        if (tutor_email) {
+          // Build HTML email using template
+          const html = enrollmentEmailTemplate({
+            tutorName:      tutor_name      || 'Tutor',
+            studentName:    fullName,
+            courseName:     title,
+            selectedDay,
+            selectedTime,
+            preferredMode:  preferredMode   || 'online',
+            studentMessage: message         || null,
+          });
+
+          // Send using sendEmail helper
+          await sendEmail({
+            email:   tutor_email,
+            subject: `📚 New Enrollment Request — ${title}`,
+            message: 'You have a new enrollment request on Mentora.lk', // plain text fallback
+            html,
+          });
+
+          console.log(`✅ Enrollment email sent to: ${tutor_email}`);
+        } else {
+          console.warn(`⚠️ Tutor email not found for course: ${classId}`);
+        }
+      }
+    } catch (emailErr) {
+      // Email failure does NOT fail the enrollment transaction
+      console.warn('⚠️ Email notification failed:', emailErr.message);
+    }
+
     res.status(201).json({
       message: 'Enrollment request submitted successfully',
-      enrollment: bookingResult.rows[0],
+      enrollment,
     });
   } catch (err) {
     next(err);
@@ -261,10 +309,48 @@ const deleteEnrollment = async (req, res, next) => {
   }
 };
 
+const testEnrollmentEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Recipient email is required in the request body' });
+    }
+
+    const html = enrollmentEmailTemplate({
+      tutorName:      'Test Tutor',
+      studentName:    'John Doe (Postman Test)',
+      courseName:     'Advanced Mathematics',
+      selectedDay:    'Monday',
+      selectedTime:   '10:00 AM',
+      preferredMode:  'online',
+      studentMessage: 'Hello, this is a test enrollment request sent via Postman.',
+    });
+
+    await sendEmail({
+      email:   email,
+      subject: '📚 [TEST] New Enrollment Request — Advanced Mathematics',
+      message: 'You have a new test enrollment request on Mentora.lk',
+      html,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Test email successfully sent to ${email}`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Email sending failed',
+      error: err.message,
+    });
+  }
+};
+
 module.exports = {
   createEnrollment,
   getMyEnrollments,
   getMySchedule,
   updateEnrollmentStatus,
   deleteEnrollment,
+  testEnrollmentEmail,
 };
