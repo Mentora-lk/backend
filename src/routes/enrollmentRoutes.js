@@ -7,14 +7,15 @@ const {
   updateEnrollmentStatus,
   deleteEnrollment,
 } = require('../controllers/enrollmentController');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Temporary testing routes without auth
-router.post("/", createEnrollment);
-router.get("/mine", getMyEnrollments);
-router.get("/schedule", getMySchedule);
-router.patch("/:id", updateEnrollmentStatus);
-router.delete("/:id", deleteEnrollment);
+// Protected routes
+router.post("/", protect, createEnrollment);
+router.get("/mine", protect, getMyEnrollments);
+router.get("/schedule", protect, getMySchedule);
+router.patch("/:id", protect, updateEnrollmentStatus);
+router.delete("/:id", protect, deleteEnrollment);
 
 module.exports = router;

@@ -22,12 +22,11 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'Missing required enrollment fields' });
     }
 
-    // TEMP until auth is connected
-    const studentId = 1;
+    const studentId = req.user.id;
 
     // Check course exists
     const courseResult = await pool.query(
-      'SELECT * FROM PoatAD WHERE id = $1',
+      'SELECT * FROM poatad WHERE id = $1',
       [classId]
     );
 
@@ -43,7 +42,7 @@ const createEnrollment = async (req, res, next) => {
 
     // Prevent duplicate enrollment
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE student_id = $1 AND class_id = $2',
+      'SELECT * FROM requests WHERE student_id = $1 AND class_id = $2',
       [studentId, classId]
     );
 
@@ -53,30 +52,19 @@ const createEnrollment = async (req, res, next) => {
       });
     }
 
-    // Check max students
-    const enrolledResult = await pool.query(
-      "SELECT COUNT(*) FROM enrollments WHERE class_id = $1 AND status IN ('approved', 'active')",
-      [classId]
-    );
-
-    const enrolledCount = parseInt(enrolledResult.rows[0].count);
-
-    if (enrolledCount >= course.max_students) {
-      return res.status(400).json({ message: 'This class is full' });
-    }
-
-    // Create enrollment
+    // Create enrollment request
     const bookingResult = await pool.query(
-      `INSERT INTO enrollments 
-        (student_id, class_id, status, full_name, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
+      `INSERT INTO requests 
+        (student_id, class_id, status, full_name, email, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
        VALUES 
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
        RETURNING *`,
       [
         studentId,
         classId,
-        'requested',
+        'pending',
         fullName,
+        email,
         phone,
         school || null,
         grade,
@@ -118,21 +106,12 @@ const getMyEnrollments = async (req, res, next) => {
         c.location,
         c.fee,
         c.image
-      FROM enrollments e
-      JOIN PoatAD c ON e.class_id = c.id
-      WHERE e.student_id = $1
-    `;
-
-    const params = [studentId];
-
-    if (status && status !== 'all') {
-      params.push(status);
-      query += ` AND e.status = $${params.length}`;
-    }
-
-    query += ` ORDER BY e."createdAt" DESC`;
-
-    const result = await pool.query(query, params);
+      FROM requests e
+      JOIN poatad c ON e.class_id = c.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY e."createdAt" DESC`,
+      params
+    );
 
     res.json(result.rows);
   } catch (err) {
@@ -156,9 +135,10 @@ const getMySchedule = async (req, res, next) => {
         c.schedule,
         c.mode,
         c.location,
-        u.name        AS tutor_name
-       FROM enrollments e
-       JOIN PoatAD c ON e.class_id = c.id
+        tp.full_name  AS tutor_name
+       FROM requests e
+       JOIN poatad c ON e.class_id = c.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
        WHERE e.student_id = $1
          AND e.status IN ('approved', 'active')`,
       [req.user.id]
@@ -170,7 +150,7 @@ const getMySchedule = async (req, res, next) => {
       courseId:     row.course_id,
       title:        row.title,
       subject:      row.subject,
-      tutor:        row.tutor_name,
+      tutor:        row.tutor_name || 'Unknown Tutor',
       mode:         row.preferred_mode || row.mode,
       location:     row.location,
       selectedDay:  row.selected_day,
@@ -198,7 +178,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE id = $1',
+      'SELECT * FROM requests WHERE id = $1',
       [req.params.id]
     );
 
@@ -207,7 +187,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const updateResult = await pool.query(
-      `UPDATE enrollments
+      `UPDATE requests
        SET status = $1, "updatedAt" = NOW()
        WHERE id = $2
        RETURNING *`,
@@ -226,11 +206,10 @@ const updateEnrollmentStatus = async (req, res, next) => {
 // DELETE /api/enrollments/:id
 const deleteEnrollment = async (req, res, next) => {
   try {
-    // TEMP until auth is connected
-    const studentId = 1;
+    const studentId = req.user.id;
 
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE id = $1',
+      'SELECT * FROM requests WHERE id = $1',
       [req.params.id]
     );
 
@@ -245,7 +224,7 @@ const deleteEnrollment = async (req, res, next) => {
     }
 
     await pool.query(
-      'DELETE FROM enrollments WHERE id = $1',
+      'DELETE FROM requests WHERE id = $1',
       [req.params.id]
     );
 
