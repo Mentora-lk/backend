@@ -1,8 +1,10 @@
 // src/controllers/enrollmentController.js
 
 const { pool } = require('../config/db');
+const sendEmail = require('../utils/sendEmail');
+const enrollmentEmailTemplate = require('../utils/enrollmentEmailTemplate');
 
-// POST /api/enrollments
+//!POST /api/enrollments
 const createEnrollment = async (req, res, next) => {
   try {
     const {
@@ -22,12 +24,12 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'Missing required enrollment fields' });
     }
 
-    // TEMP until auth is connected
-    const studentId = 1;
+    // Use authenticated user's ID, fallback to 1 if not authenticated
+    const studentId = req.user?.id || 1;
 
     // Check course exists
     const courseResult = await pool.query(
-      'SELECT * FROM courses WHERE id = $1',
+      'SELECT * FROM poatad WHERE id = $1',
       [classId]
     );
 
@@ -41,15 +43,18 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'This course is not accepting enrollments' });
     }
 
-    // Prevent duplicate enrollment
+    // Prevent duplicate open requests only
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE student_id = $1 AND class_id = $2',
+      `SELECT * FROM enrollments
+       WHERE student_id = $1
+         AND class_id = $2
+         AND status IN ('pending', 'requested')`,
       [studentId, classId]
     );
 
     if (existingResult.rows.length > 0) {
       return res.status(409).json({
-        message: 'You are already enrolled or have a pending request for this class',
+        message: 'You already have a pending request for this class',
       });
     }
 
@@ -65,18 +70,19 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'This class is full' });
     }
 
-    // Create enrollment
+    //! Create enrollment
     const bookingResult = await pool.query(
-      `INSERT INTO enrollments 
-        (student_id, class_id, status, full_name, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
+      `INSERT INTO requests 
+        (student_id, class_id, status, full_name, email, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
        VALUES 
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
        RETURNING *`,
       [
         studentId,
         classId,
-        'requested',
+        'pending',
         fullName,
+        email,
         phone,
         school || null,
         grade,
@@ -87,47 +93,100 @@ const createEnrollment = async (req, res, next) => {
       ]
     );
 
+    const enrollment = bookingResult.rows[0];
+
+    // ── Send email notification to tutor ──────────────────────────────────
+    try {
+      // Get course info and tutor email/name from tutor_profiles table
+      const courseResult = await pool.query(
+        `SELECT c.title, c.tutor_id, tp.email AS tutor_email, tp.full_name AS tutor_name 
+         FROM courses c 
+         LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id 
+         WHERE c.id = $1`,
+        [classId]
+      );
+
+      if (courseResult.rows.length > 0) {
+        const { title, tutor_email, tutor_name } = courseResult.rows[0];
+
+        if (tutor_email) {
+          // Build HTML email using template
+          const html = enrollmentEmailTemplate({
+            tutorName:      tutor_name      || 'Tutor',
+            studentName:    fullName,
+            courseName:     title,
+            selectedDay,
+            selectedTime,
+            preferredMode:  preferredMode   || 'online',
+            studentMessage: message         || null,
+          });
+
+          // Send using sendEmail helper
+          await sendEmail({
+            email:   tutor_email,
+            subject: `📚 New Enrollment Request — ${title}`,
+            message: 'You have a new enrollment request on Mentora.lk', // plain text fallback
+            html,
+          });
+
+          console.log(`✅ Enrollment email sent to: ${tutor_email}`);
+        } else {
+          console.warn(`⚠️ Tutor email not found for course: ${classId}`);
+        }
+      }
+    } catch (emailErr) {
+      // Email failure does NOT fail the enrollment transaction
+      console.warn('⚠️ Email notification failed:', emailErr.message);
+    }
+
     res.status(201).json({
       message: 'Enrollment request submitted successfully',
-      enrollment: bookingResult.rows[0],
+      enrollment,
     });
   } catch (err) {
     next(err);
   }
 };
 
-// GET /api/enrollments/mine
+//! GET /api/enrollments/mine
 const getMyEnrollments = async (req, res, next) => {
   try {
     const { status } = req.query;
+    let where = ['e.student_id = $1'];
+    let params = [req.user.id];
 
-    // TEMP until auth is connected
-    const studentId = 1;
+    if (status && status !== 'all') {
+      if (status === 'pending' || status === 'requested') {
+        where.push(`e.status IN ('pending', 'requested')`);
+      } else {
+        where.push(`e.status = $2`);
+        params.push(status);
+      }
+    }
 
-    let query = `
-      SELECT 
+    const result = await pool.query(
+      `SELECT 
         e.*,
         c.title,
         c.subject,
         c.mode,
         c.location,
         c.fee,
-        c.image
-      FROM enrollments e
-      JOIN courses c ON e.class_id = c.id
-      WHERE e.student_id = $1
-    `;
-
-    const params = [studentId];
-
-    if (status && status !== 'all') {
-      params.push(status);
-      query += ` AND e.status = $${params.length}`;
-    }
-
-    query += ` ORDER BY e."createdAt" DESC`;
-
-    const result = await pool.query(query, params);
+        c.image,
+        c.average_rating,
+        c.max_students,
+        c.schedule,
+        c.badge,
+        tp.full_name AS tutor_name,
+        tp.id   AS tutor_id,
+        tp.profile_picture_url AS tutor_avatar
+       FROM enrollments e
+       LEFT JOIN courses c ON e.class_id = c.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
+       WHERE ${where.join(' AND ')}
+       ORDER BY e."createdAt" DESC`,
+      params
+    );
 
     res.json(result.rows);
   } catch (err) {
@@ -135,38 +194,43 @@ const getMyEnrollments = async (req, res, next) => {
   }
 };
 
-// GET /api/enrollments/schedule
+//! GET /api/enrollments/schedule
 const getMySchedule = async (req, res, next) => {
   try {
-    // TEMP until auth is connected
-    const studentId = 1;
-
     const result = await pool.query(
       `SELECT 
-        e.*,
-        c.id AS course_id,
+        e.id          AS enrollment_id,
+        e.selected_day,
+        e.selected_time,
+        e.preferred_mode,
+        e.status,
+        c.id          AS course_id,
         c.title,
         c.subject,
         c.schedule,
         c.mode,
-        c.location
+        c.location,
+        tp.full_name  AS tutor_name
        FROM enrollments e
-       JOIN courses c ON e.class_id = c.id
+       LEFT JOIN courses c ON e.class_id = c.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
        WHERE e.student_id = $1
-       AND e.status IN ('approved', 'active')`,
-      [studentId]
+         AND e.status IN ('approved', 'active')`,
+      [req.user.id]
     );
 
-    const sessions = result.rows.map((e) => ({
-      enrollmentId: e.id,
-      courseId: e.course_id,
-      title: e.title,
-      subject: e.subject,
-      mode: e.preferred_mode || e.mode,
-      location: e.location,
-      selectedDay: e.selected_day,
-      selectedTime: e.selected_time,
-      schedule: e.schedule,
+    // Shape for schedule page
+    const sessions = result.rows.map(row => ({
+      enrollmentId: row.enrollment_id,
+      courseId: row.course_id,
+      title: row.title,
+      subject: row.subject,
+      tutor: row.tutor_name,
+      mode: row.preferred_mode || row.mode,
+      location: row.location,
+      selectedDay: row.selected_day,
+      selectedTime: row.selected_time,
+      schedule: row.schedule,
     }));
 
     res.json(sessions);
@@ -175,7 +239,7 @@ const getMySchedule = async (req, res, next) => {
   }
 };
 
-// PATCH /api/enrollments/:id
+//! PATCH /api/enrollments/:id
 const updateEnrollmentStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
@@ -189,7 +253,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE id = $1',
+      'SELECT * FROM requests WHERE id = $1',
       [req.params.id]
     );
 
@@ -198,7 +262,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const updateResult = await pool.query(
-      `UPDATE enrollments
+      `UPDATE requests
        SET status = $1, "updatedAt" = NOW()
        WHERE id = $2
        RETURNING *`,
@@ -214,14 +278,14 @@ const updateEnrollmentStatus = async (req, res, next) => {
   }
 };
 
-// DELETE /api/enrollments/:id
+//! DELETE /api/enrollments/:id
 const deleteEnrollment = async (req, res, next) => {
   try {
-    // TEMP until auth is connected
-    const studentId = 1;
+    // Use authenticated user's ID
+    const studentId = req.user.id;
 
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE id = $1',
+      'SELECT * FROM requests WHERE id = $1',
       [req.params.id]
     );
 
@@ -236,7 +300,7 @@ const deleteEnrollment = async (req, res, next) => {
     }
 
     await pool.query(
-      'DELETE FROM enrollments WHERE id = $1',
+      'DELETE FROM requests WHERE id = $1',
       [req.params.id]
     );
 
@@ -246,10 +310,48 @@ const deleteEnrollment = async (req, res, next) => {
   }
 };
 
+const testEnrollmentEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Recipient email is required in the request body' });
+    }
+
+    const html = enrollmentEmailTemplate({
+      tutorName:      'Test Tutor',
+      studentName:    'John Doe (Postman Test)',
+      courseName:     'Advanced Mathematics',
+      selectedDay:    'Monday',
+      selectedTime:   '10:00 AM',
+      preferredMode:  'online',
+      studentMessage: 'Hello, this is a test enrollment request sent via Postman.',
+    });
+
+    await sendEmail({
+      email:   email,
+      subject: '📚 [TEST] New Enrollment Request — Advanced Mathematics',
+      message: 'You have a new test enrollment request on Mentora.lk',
+      html,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Test email successfully sent to ${email}`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Email sending failed',
+      error: err.message,
+    });
+  }
+};
+
 module.exports = {
   createEnrollment,
   getMyEnrollments,
   getMySchedule,
   updateEnrollmentStatus,
   deleteEnrollment,
+  testEnrollmentEmail,
 };

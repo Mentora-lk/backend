@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+//!import route files(but not activated)
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const tutorRoutes = require('./routes/tutorRoutes');
@@ -11,7 +12,7 @@ const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 
 const app = express();
 
-// Middleware
+//! configure Middleware
 app.use(cors());
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true }));
@@ -25,7 +26,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
+//! Activate and use these routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tutors', tutorRoutes);
@@ -37,6 +38,31 @@ app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 
 // Community Module
 app.use('/api/student', studentCommunityRoutes);
+
+// Health Check
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        message: 'Server is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Root: provide basic API info to avoid generic 404 on '/'
+app.get('/', (req, res) => {
+    res.json({
+        message: 'API Root - use /api/health or /api/courses',
+        health: '/api/health',
+        courses: '/api/courses'
+    });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
+module.exports = app;
 
 const db = require('./config/db');
 
