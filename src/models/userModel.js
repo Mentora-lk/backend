@@ -73,6 +73,51 @@ const updatePassword = async (userId, newPasswordHash) => {
     return result.rows[0];
 };
 
+const getStudentProfile = async (userId) => {
+    const result = await db.query(
+        `SELECT u.email, u.role, sp.full_name, sp.school_institute, sp.age, sp.language, sp.grade_level, sp.address, sp.phone, sp.bio, sp.profile_picture_url 
+         FROM users u
+         LEFT JOIN student_profiles sp ON u.id = sp.user_id
+         WHERE u.id = $1`,
+        [userId]
+    );
+    return result.rows[0];
+};
+
+const updateStudentProfile = async (userId, data) => {
+    const { fullName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl } = data;
+    
+    // 1. Try to update existing profile
+    const result = await db.query(
+        `UPDATE student_profiles 
+         SET full_name = COALESCE($2, full_name),
+             school_institute = COALESCE($3, school_institute),
+             age = COALESCE($4, age),
+             language = COALESCE($5, language),
+             grade_level = COALESCE($6, grade_level),
+             address = COALESCE($7, address),
+             phone = COALESCE($8, phone),
+             bio = COALESCE($9, bio),
+             profile_picture_url = COALESCE($10, profile_picture_url)
+         WHERE user_id = $1
+         RETURNING *`,
+        [userId, fullName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl]
+    );
+
+    if (result.rows.length === 0) {
+        // 2. If it does not exist, insert it
+        const fallbackName = fullName || 'Student';
+        const insertResult = await db.query(
+            `INSERT INTO student_profiles (user_id, full_name, school_institute, age, language, grade_level, address, phone, bio, profile_picture_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING *`,
+            [userId, fallbackName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl]
+        );
+        return insertResult.rows[0];
+    }
+    return result.rows[0];
+};
+
 module.exports = {
     createUserAccount,
     findUserByEmail,
@@ -80,5 +125,7 @@ module.exports = {
     createTutorProfile,
     savePasswordResetToken,
     findUserByResetToken,
-    updatePassword
+    updatePassword,
+    getStudentProfile,
+    updateStudentProfile
 };
