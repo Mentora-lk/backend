@@ -34,7 +34,7 @@ const createTutorProfile = async (userId, data) => {
         `INSERT INTO tutor_profiles (
             user_id, full_name, dob, gender, city, email, address, 
             profile_picture_url, banner_url, university, degree_title, 
-            graduation_year, experience, subjects, grade_range, level, 
+            graduation_year, experience, subject, grade_range, level, 
             medium, class_type, description
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19

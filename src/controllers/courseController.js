@@ -68,7 +68,7 @@ const getCourses = async (req, res, next) => {
 
     // Count
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM courses c WHERE ${where.join(' AND ')}`,
+      `SELECT COUNT(*) FROM poatad c WHERE ${where.join(' AND ')}`,
       params
     );
 
@@ -76,30 +76,17 @@ const getCourses = async (req, res, next) => {
 
     // Courses with tutor info
     const coursesResult = await pool.query(
-  `SELECT 
-    c.*,
-    tp.full_name           AS tutor_name,
-    tp.profile_picture_url AS tutor_avatar
-   FROM courses c
-   LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
-   WHERE ${where.join(' AND ')}
-   ORDER BY ${orderBy}
-   LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-  [...params, limit, offset]
-);
-
-    const courses = coursesResult.rows.map(row => ({
-      ...row,
-      tutor_name:   row.tutor_name,
-      tutor_avatar: row.tutor_avatar,
-      tutor: {
-        name:   row.tutor_name,
-        avatar: row.tutor_avatar,
-      },
-    }));
+      `SELECT c.*, t.full_name as tutor_name 
+       FROM poatad c
+       LEFT JOIN tutor_profiles t ON c.tutor_id = t.user_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY c.${orderBy}
+       LIMIT $${index} OFFSET $${index + 1}`,
+      [...params, limitNum, offset]
+    );
 
     res.json({
-      courses,
+      courses: coursesResult.rows,
       total,
       totalPages: Math.ceil(total / limitNum),
       currentPage: pageNum,
@@ -112,19 +99,19 @@ const getCourses = async (req, res, next) => {
 //! GET /api/courses/:id
 const getCourseById = async (req, res, next) => {
   try {
-    const courseResult = await pool.query(
-      'SELECT * FROM courses WHERE id = $1',
+    const result = await pool.query(
+      'SELECT * FROM poatad WHERE id = $1',
       [req.params.id]
     );
 
-    if (courseResult.rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    const course = courseResult.rows[0];
+    const course = result.rows[0];
 
     const tutorResult = await pool.query(
-      'SELECT * FROM tutor_profiles WHERE id = $1',
+      'SELECT * FROM tutor_profiles WHERE user_id = $1',
       [course.tutor_id]
     );
 
@@ -178,7 +165,7 @@ const getCourseReviews = async (req, res, next) => {
   try {
     // First get the tutor_id for this course
     const courseResult = await pool.query(
-      'SELECT tutor_id FROM courses WHERE id = $1',
+      'SELECT tutor_id FROM poatad WHERE id = $1',
       [req.params.id]
     );
 
@@ -223,7 +210,7 @@ const addReview = async (req, res, next) => {
 
     // Get tutor_id from course
     const courseResult = await pool.query(
-      'SELECT tutor_id FROM courses WHERE id = $1',
+      'SELECT tutor_id FROM poatad WHERE id = $1',
       [courseId]
     );
 
@@ -257,16 +244,18 @@ const addReview = async (req, res, next) => {
 //! GET /api/stats — platform statistics for landing page hero
 const getPlatformStats = async (req, res, next) => {
   try {
-    const [tutors, students, subjects] = await Promise.all([
-      pool.query(`SELECT COUNT(*) FROM tutor_profiles`),
-      pool.query(`SELECT COUNT(DISTINCT student_id) FROM enrollments WHERE status IN ('active','approved')`),
-      pool.query(`SELECT COUNT(DISTINCT subject) FROM courses WHERE status = 'active'`),
-    ]);
+    const courseCount = await pool.query('SELECT COUNT(*) FROM poatad');
+    const tutorCount = await pool.query('SELECT COUNT(*) FROM tutor_profiles');
+    const studentCount = await pool.query('SELECT COUNT(*) FROM users WHERE role = $1', ['student']);
+    const reviewCount = await pool.query('SELECT COUNT(*) FROM reviews');
 
     res.json({
-      activeTutors:     parseInt(tutors.rows[0].count),
-      studentsEnrolled: parseInt(students.rows[0].count),
-      subjectsAvailable: parseInt(subjects.rows[0].count),
+      totalCourses: parseInt(courseCount.rows[0].count),
+      totalTutors: parseInt(tutorCount.rows[0].count),
+      totalStudents: parseInt(studentCount.rows[0].count),
+      totalReviews: parseInt(reviewCount.rows[0].count),
+      activeLearners: '5k+',
+      successRate: '98%'
     });
   } catch (err) {
     next(err);
@@ -278,5 +267,8 @@ module.exports = {
   getCourseById,
   getCourseReviews,
   addReview,
+  createCourse,
+  deleteCourse,
+  updateCourse,
   getPlatformStats,
 };
