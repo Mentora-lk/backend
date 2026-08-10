@@ -41,6 +41,9 @@ app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 // Community Module
 app.use('/api/student', studentCommunityRoutes);
 
+// Recommendation Module
+app.use('/api/recommendations', require('./routes/recommendationRoutes'));
+
 const db = require('./config/db');
 
 // TEMPORARY: Debug route to check user account status
