@@ -212,17 +212,31 @@ exports.createPost = async (req, res) => {
         console.log('  Poll options string:', poll_options);
 
         // Validate and set type - only allow valid values
-        const validTypes = ['announcement', 'poll', 'document'];
+        const validTypes = ['announcement', 'poll', 'document', 'pdf', 'doc', 'image', 'video', 'text'];
+        
+        // Dynamically detect file type if generic type was provided
+        if (req.file) {
+            const ext = req.file.originalname.split('.').pop().toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) type = 'image';
+            else if (['mp4', 'avi', 'mov', 'webm'].includes(ext)) type = 'video';
+            else if (ext === 'pdf') type = 'pdf';
+            else if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) type = 'doc';
+            else type = 'document'; // generic document
+        }
+
         if (!type || !validTypes.includes(type)) {
             type = 'announcement'; // Default to announcement
             console.log('⚠️  Type not provided or invalid, using default: announcement');
         }
 
-        if (!content) {
+        if (!content && !req.file && !poll_options) {
             return res.status(400).json({ 
                 status: 'error', 
-                message: 'Content is required'
+                message: 'Content, file, or poll is required'
             });
+        }
+        if (!content) {
+            content = ''; // Fallback for DB schema if needed
         }
 
         // Handle file upload if material is attached

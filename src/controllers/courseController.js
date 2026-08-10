@@ -262,6 +262,71 @@ const getPlatformStats = async (req, res, next) => {
   }
 };
 
+//! POST /api/courses
+const createCourse = async (req, res, next) => {
+  try {
+    const tutorId = req.user.id;
+    const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
+    const result = await pool.query(
+      `INSERT INTO poatad 
+        (tutor_id, title, subject, description, fee, mode, location, schedule, max_students, status, average_rating, review_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', 0, 0) RETURNING *`,
+      [tutorId, title, subject, description, fee, mode, location, schedule, max_students]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! PUT /api/courses/:id
+const updateCourse = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id;
+    const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE poatad 
+       SET title = COALESCE($1, title),
+           subject = COALESCE($2, subject),
+           description = COALESCE($3, description),
+           fee = COALESCE($4, fee),
+           mode = COALESCE($5, mode),
+           location = COALESCE($6, location),
+           schedule = COALESCE($7, schedule),
+           max_students = COALESCE($8, max_students)
+       WHERE id = $9 AND tutor_id = $10 RETURNING *`,
+      [title, subject, description, fee, mode, location, schedule, max_students, courseId, tutorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! DELETE /api/courses/:id
+const deleteCourse = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id;
+    const result = await pool.query(
+      'DELETE FROM poatad WHERE id = $1 AND tutor_id = $2 RETURNING *',
+      [courseId, tutorId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+    res.json({ message: 'Course deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getCourses,
   getCourseById,
