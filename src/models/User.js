@@ -1,2 +1,0 @@
-// User Model
-module.exports = {};
