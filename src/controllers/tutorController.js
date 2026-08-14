@@ -11,8 +11,8 @@ const getDashboardData = async (req, res, next) => {
         c.id, c.title, c.subject, c.location, c.mode, c.fee, 
         c.average_rating as rating, c.status, c.max_students as "totalSlots", 
         c.schedule as "nextSession", c.image,
-        (SELECT COUNT(*) FROM requests e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
-      FROM poatad c
+        (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
+      FROM PoatAD c
       WHERE c.tutor_id = $1
       ORDER BY c."createdAt" DESC
     `, [userId]);
@@ -23,8 +23,8 @@ const getDashboardData = async (req, res, next) => {
     const requestsResult = await pool.query(`
       SELECT 
         e.id, e.full_name as name, c.subject, e."createdAt"
-      FROM requests e
-      JOIN poatad c ON e.class_id = c.id
+      FROM enrollments e
+      JOIN PoatAD c ON e.class_id = c.id
       WHERE c.tutor_id = $1 AND e.status = 'pending'
       ORDER BY e."createdAt" DESC
       LIMIT 5
@@ -90,8 +90,8 @@ const getTutorRequests = async (req, res, next) => {
         e."createdAt" as date, e.message, e.status,
         e.email, e.phone, e.school, e.grade, e.preferred_mode,
         e.selected_day, e.selected_time
-      FROM requests e
-      JOIN poatad c ON e.class_id = c.id
+      FROM enrollments e
+      JOIN PoatAD c ON e.class_id = c.id
       WHERE c.tutor_id = $1
       ORDER BY e."createdAt" DESC
     `, [userId]);
