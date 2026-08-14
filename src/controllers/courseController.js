@@ -102,20 +102,77 @@ const createCourse = async (req, res, next) => {
     const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
     
     // Validate required fields
-    if (!title || !subject || !fee) {
+    if (!title || !subject || fee === undefined || fee === null || fee === '') {
       return res.status(400).json({ message: 'Title, subject, and fee are required' });
     }
 
     const tutorId = req.user.id; // From authMiddleware
 
+    // 1. Create advertisement in 'pending' status
     const result = await pool.query(
       `INSERT INTO poatad 
        (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, grade, medium, "createdAt", "updatedAt") 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
-      [tutorId, title, subject, description, fee, schedule, mode || 'both', location || 'Remote', max_students || 50, 'active', image || '', grade || '', medium || '']
+      [tutorId, title, subject, description, fee, schedule, mode || 'both', location || 'Remote', max_students || 50, 'pending', image || '', grade || '', medium || '']
     );
 
-    res.status(201).json(result.rows[0]);
+    const newAd = result.rows[0];
+
+    // 2. Create Payment Record
+    const amount = parseFloat(process.env.POST_AD_FEE || '500').toFixed(2);
+    const currency = process.env.CURRENCY || 'LKR';
+    const merchantId = process.env.PAYHERE_MERCHANT_ID;
+    const merchantSecret = process.env.PAYHERE_SECRET;
+    const orderId = `ORDER_${Date.now()}_${tutorId}_${newAd.id}`;
+
+    await pool.query(
+      `INSERT INTO tutor_payments (tutor_id, ad_id, order_id, amount, currency, status, "createdAt", "updatedAt") 
+       VALUES ($1, $2, $3, $4, $5, 'PENDING', NOW(), NOW())`,
+      [tutorId, newAd.id, orderId, amount, currency]
+    );
+
+    // 3. Generate PayHere Hash
+    const crypto = require('crypto');
+    const hashedSecret = crypto.createHash('md5').update(merchantSecret).digest('hex').toUpperCase();
+    const hashString = merchantId + orderId + amount + currency + hashedSecret;
+    const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
+
+    // Fetch tutor details for PayHere required fields
+    const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [tutorId]);
+    const profileRes = await pool.query('SELECT full_name, phone, city FROM tutor_profiles WHERE user_id = $1', [tutorId]);
+    
+    const tutorEmail = userRes.rows[0]?.email || 'tutor@example.com';
+    const fullName = profileRes.rows[0]?.full_name || 'Tutor Name';
+    const nameParts = fullName.split(' ');
+    const firstName = nameParts[0] || 'Tutor';
+    const lastName = nameParts.slice(1).join(' ') || 'Name';
+    const phone = profileRes.rows[0]?.phone || '0771234567';
+    const city = profileRes.rows[0]?.city || 'Colombo';
+
+    // 4. Return both the ad and payment configuration
+    res.status(201).json({
+      course: newAd,
+      payment: {
+        sandbox: true,
+        merchant_id: merchantId,
+        return_url: 'http://localhost:3000/dashboard/tutor/my-classes',
+        cancel_url: 'http://localhost:3000/dashboard/tutor/post-ad',
+        notify_url: 'http://localhost:5000/api/payments/payhere/notify',
+        order_id: orderId,
+        items: `Post Ad: ${title}`,
+        amount: amount,
+        currency: currency,
+        hash: hash,
+        // PayHere requires customer details
+        first_name: firstName,
+        last_name: lastName,
+        email: tutorEmail,
+        phone: phone,
+        address: city,
+        city: city,
+        country: 'Sri Lanka'
+      }
+    });
   } catch (err) {
     next(err);
   }
