@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
 //! GET /api/courses
 const getCourses = async (req, res, next) => {
@@ -267,11 +268,17 @@ const createCourse = async (req, res, next) => {
   try {
     const tutorId = req.user.id;
     const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
+    
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/classes', req.file.originalname);
+    }
+
     const result = await pool.query(
       `INSERT INTO poatad 
-        (tutor_id, title, subject, description, fee, mode, location, schedule, max_students, status, average_rating, review_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', 0, 0) RETURNING *`,
-      [tutorId, title, subject, description, fee, mode, location, schedule, max_students]
+        (tutor_id, title, subject, description, fee, mode, location, schedule, max_students, status, average_rating, review_count, image)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', 0, 0, $10) RETURNING *`,
+      [tutorId, title, subject, description, fee, mode, location, schedule, max_students, imageUrl]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -286,6 +293,11 @@ const updateCourse = async (req, res, next) => {
     const tutorId = req.user.id;
     const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
     
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/classes', req.file.originalname);
+    }
+
     const result = await pool.query(
       `UPDATE poatad 
        SET title = COALESCE($1, title),
@@ -295,9 +307,10 @@ const updateCourse = async (req, res, next) => {
            mode = COALESCE($5, mode),
            location = COALESCE($6, location),
            schedule = COALESCE($7, schedule),
-           max_students = COALESCE($8, max_students)
-       WHERE id = $9 AND tutor_id = $10 RETURNING *`,
-      [title, subject, description, fee, mode, location, schedule, max_students, courseId, tutorId]
+           max_students = COALESCE($8, max_students),
+           image = COALESCE($9, image)
+       WHERE id = $10 AND tutor_id = $11 RETURNING *`,
+      [title, subject, description, fee, mode, location, schedule, max_students, imageUrl, courseId, tutorId]
     );
 
     if (result.rows.length === 0) {

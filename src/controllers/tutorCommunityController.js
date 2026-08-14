@@ -180,12 +180,31 @@ exports.updateRequestStatus = async (req, res) => {
             'UPDATE community_memberships SET status = $1 WHERE id = $2 RETURNING *',
             [status, membership_id]
         );
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ status: 'error', message: 'Membership request not found' });
         }
-        
-        res.status(200).json({ status: 'success', data: result.rows[0] });
+
+        const membership = result.rows[0];
+
+        // Notify the student in real time so their "My Requests" widget
+        // updates without a refresh (relies on the same user:<id> auto-join
+        // used for new_membership_request on the tutor side).
+        const communityResult = await db.query(
+            'SELECT name FROM communities WHERE id = $1',
+            [membership.community_id]
+        );
+        const io = req.app.locals.io;
+        if (io && communityResult.rows.length > 0) {
+            io.to(`user:${membership.student_id}`).emit('membership_request_updated', {
+                membership_id: membership.id,
+                community_id: membership.community_id,
+                community_name: communityResult.rows[0].name,
+                status: membership.status,
+            });
+        }
+
+        res.status(200).json({ status: 'success', data: membership });
     } catch (error) {
         console.error('Error updating request status:', error);
         res.status(500).json({ status: 'error', message: error.message });
@@ -214,8 +233,11 @@ exports.createPost = async (req, res) => {
         // Validate and set type - only allow valid values
         const validTypes = ['announcement', 'poll', 'document', 'pdf', 'doc', 'image', 'video', 'text'];
         
-        // Dynamically detect file type if generic type was provided
-        if (req.file) {
+        // Dynamically detect file type if generic type was provided.
+        // Skip when the client explicitly sent type: 'poll' — a poll with an
+        // attached file must stay a poll; media_url/poll_options are still
+        // set below regardless, only the `type` column shouldn't be clobbered.
+        if (req.file && type !== 'poll') {
             const ext = req.file.originalname.split('.').pop().toLowerCase();
             if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) type = 'image';
             else if (['mp4', 'avi', 'mov', 'webm'].includes(ext)) type = 'video';
@@ -268,18 +290,28 @@ exports.createPost = async (req, res) => {
         }
         
         console.log('💾 Inserting into database...');
+        // Join author info in the same round-trip (same shape as getCommunityPosts'
+        // author_name/author_role) so the Socket.io broadcast below carries a
+        // correct author display, not just raw post columns.
         const result = await db.query(
-            `INSERT INTO posts (community_id, author_id, type, content, media_url, poll_options, is_pinned, created_at) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *`,
+            `WITH inserted AS (
+               INSERT INTO posts (community_id, author_id, type, content, media_url, poll_options, is_pinned, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *
+             )
+             SELECT i.*, COALESCE(sp.full_name, tp.full_name, 'Unknown User') AS author_name, u.role AS author_role
+             FROM inserted i
+             JOIN users u ON i.author_id = u.id
+             LEFT JOIN student_profiles sp ON u.id = sp.user_id
+             LEFT JOIN tutor_profiles tp ON u.id = tp.user_id`,
             [community_id, tutorId, type, content, media_url, pollOptionsJson ? JSON.stringify(pollOptionsJson) : null, is_pinned || false]
         );
         
         const newPostData = result.rows[0];
         console.log('✅ Post created with ID:', newPostData.id);
         
-        const io = req.app.get('io');
+        const io = req.app.locals.io;
         if (io) {
-            io.to(community_id.toString()).emit('new_community_post', newPostData);
+            io.to(`community:${community_id}`).emit('new_community_post', newPostData);
         }
         
         res.status(201).json({ status: 'success', data: newPostData });
@@ -322,9 +354,9 @@ exports.createDeadline = async (req, res) => {
         
         const newDeadlineData = result.rows[0];
         
-        const io = req.app.get('io');
+        const io = req.app.locals.io;
         if (io) {
-            io.to(community_id.toString()).emit('new_deadline', newDeadlineData);
+            io.to(`community:${community_id}`).emit('new_deadline', newDeadlineData);
         }
         
         res.status(201).json({ status: 'success', data: newDeadlineData });

@@ -72,9 +72,9 @@ const createEnrollment = async (req, res, next) => {
 
     //! Create enrollment
     const bookingResult = await pool.query(
-      `INSERT INTO requests 
+      `INSERT INTO enrollments
         (student_id, class_id, status, full_name, email, phone, school, grade, message, preferred_mode, selected_day, selected_time, "createdAt", "updatedAt")
-       VALUES 
+       VALUES
         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
        RETURNING *`,
       [
@@ -253,7 +253,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const existingResult = await pool.query(
-      'SELECT * FROM requests WHERE id = $1',
+      'SELECT * FROM enrollments WHERE id = $1',
       [req.params.id]
     );
 
@@ -262,7 +262,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const updateResult = await pool.query(
-      `UPDATE requests
+      `UPDATE enrollments
        SET status = $1, "updatedAt" = NOW()
        WHERE id = $2
        RETURNING *`,
@@ -285,7 +285,7 @@ const deleteEnrollment = async (req, res, next) => {
     const studentId = req.user.id;
 
     const existingResult = await pool.query(
-      'SELECT * FROM requests WHERE id = $1',
+      'SELECT * FROM enrollments WHERE id = $1',
       [req.params.id]
     );
 
@@ -300,7 +300,7 @@ const deleteEnrollment = async (req, res, next) => {
     }
 
     await pool.query(
-      'DELETE FROM requests WHERE id = $1',
+      'DELETE FROM enrollments WHERE id = $1',
       [req.params.id]
     );
 
