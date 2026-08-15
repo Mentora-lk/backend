@@ -1,4 +1,6 @@
 const { pool } = require('../config/db');
+const { hashPassword } = require('../utils/passwordHash');
+
 module.exports = {
   // GET /api/admin/dashboard
   getDashboard: async (req, res) => {
@@ -31,6 +33,35 @@ module.exports = {
       res.json(result.rows);
     } catch (err) {
       console.error('Get tutors error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  // POST /api/admin/tutors
+  createTutor: async (req, res) => {
+    const { fullName, email, password, subject, city, phone } = req.body;
+    if (!fullName || !email || !password) {
+      return res.status(400).json({ message: 'Full name, email and password are required' });
+    }
+    try {
+      const exists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+      if (exists.rows.length > 0) {
+        return res.status(400).json({ message: 'Email already registered' });
+      }
+      const password_hash = await hashPassword(password);
+      const userResult = await pool.query(
+        `INSERT INTO users (email, password_hash, role, is_verified) VALUES ($1, $2, 'tutor', true) RETURNING id`,
+        [email, password_hash]
+      );
+      const userId = userResult.rows[0].id;
+      await pool.query(
+        `INSERT INTO tutor_profiles (user_id, full_name, email, subject, city, phone)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [userId, fullName, email, subject || null, city || null, phone || null]
+      );
+      res.status(201).json({ message: 'Tutor created successfully' });
+    } catch (err) {
+      console.error('Create tutor error:', err);
       res.status(500).json({ message: 'Server error' });
     }
   },
