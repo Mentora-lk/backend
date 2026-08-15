@@ -4,6 +4,7 @@ const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
+const { loginWithGoogleIdToken, GoogleAccountNotFoundError, InvalidRoleError } = require('../services/googleAuthService');
 
 const registerStudent = async (req, res) => {
     try {
@@ -138,6 +139,32 @@ const loginUser = async (req, res) => {
     }
 };
 
+// Google Sign-In: logs in an existing user whose email matches the verified
+// Google account. If no account exists and `role` ('student'|'tutor') is
+// provided, a new account + minimal profile is created automatically —
+// see googleAuthService.js.
+const loginWithGoogle = async (req, res) => {
+    try {
+        const { idToken, role } = req.body;
+
+        if (!idToken) {
+            return res.status(400).json({ message: 'Google ID token is required' });
+        }
+
+        const result = await loginWithGoogleIdToken(idToken, role);
+        res.json(result);
+    } catch (error) {
+        if (error instanceof GoogleAccountNotFoundError) {
+            return res.status(404).json({ message: error.message });
+        }
+        if (error instanceof InvalidRoleError) {
+            return res.status(400).json({ message: error.message });
+        }
+        console.error('[loginWithGoogle] Error:', error.message);
+        res.status(401).json({ message: 'Google authentication failed' });
+    }
+};
+
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
@@ -219,4 +246,4 @@ const resetPassword = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser, forgotPassword, resetPassword };
+module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, forgotPassword, resetPassword };
