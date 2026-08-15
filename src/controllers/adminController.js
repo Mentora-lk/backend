@@ -136,6 +136,26 @@ module.exports = {
     }
   },
 
+  // POST /api/admin/sessions
+  createSession: async (req, res) => {
+    const { classId, studentId, fullName, phone, school, grade, email, message, preferredMode, selectedDay, selectedTime } = req.body;
+    if (!fullName || !selectedDay || !selectedTime) {
+      return res.status(400).json({ message: 'Student name, day and time are required' });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO enrollments
+           (class_id, student_id, full_name, phone, school, grade, email, message, preferred_mode, selected_day, selected_time, status, sessions_attended, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'requested', 0, NOW(), NOW())`,
+        [classId || null, studentId || null, fullName, phone || null, school || null, grade || null, email || null, message || null, preferredMode || 'online', selectedDay, selectedTime]
+      );
+      res.status(201).json({ message: 'Session created successfully' });
+    } catch (err) {
+      console.error('Create session error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // PUT /api/admin/sessions/:id
   updateSessionStatus: async (req, res) => {
     const { id } = req.params;
