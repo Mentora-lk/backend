@@ -10,6 +10,7 @@ router.get('/tutors',    authMiddleware, adminController.getTutors);
 router.get('/students',  authMiddleware, adminController.getStudents);
 router.get('/payments',  authMiddleware, adminController.getPayments);
 router.get('/sessions',  authMiddleware, adminController.getSessions);
+router.put('/sessions/:id', authMiddleware, adminController.updateSessionStatus);
 router.get('/ads',       authMiddleware, adminController.getAds);
 router.put('/ads/:id',   authMiddleware, adminController.updateAdStatus);
 
