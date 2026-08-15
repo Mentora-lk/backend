@@ -139,8 +139,8 @@ module.exports = {
   // POST /api/admin/sessions
   createSession: async (req, res) => {
     const { classId, studentId, fullName, phone, school, grade, email, message, preferredMode, selectedDay, selectedTime } = req.body;
-    if (!fullName || !selectedDay || !selectedTime) {
-      return res.status(400).json({ message: 'Student name, day and time are required' });
+    if (!classId || !studentId || !fullName || !selectedDay || !selectedTime) {
+      return res.status(400).json({ message: 'Class ID, Student ID, name, day and time are required' });
     }
     try {
       await pool.query(
