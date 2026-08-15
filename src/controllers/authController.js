@@ -1,20 +1,73 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const userModel = require('../models/userModel');
 const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
-const { loginWithGoogleIdToken, GoogleAccountNotFoundError, InvalidRoleError } = require('../services/googleAuthService');
+const {
+    loginWithGoogleIdToken,
+    verifyGoogleEmailForSignup,
+    GoogleAccountNotFoundError,
+    GoogleAccountExistsError,
+    InvalidRoleError,
+} = require('../services/googleAuthService');
+
+// Verifies a signup ticket minted by verifyGoogleEmailForSignup (see
+// googleAuthService.js) and returns its decoded payload, or null if the
+// ticket is missing/invalid/expired/for the wrong role. Shared by
+// registerStudent/registerTutor so a Google-verified signup can skip the
+// password entirely while still proving the email was really verified.
+const verifySignupTicket = (googleSignupToken, expectedRole) => {
+    if (!googleSignupToken) return null;
+    try {
+        const decoded = jwt.verify(googleSignupToken, process.env.JWT_SECRET);
+        if (decoded.purpose !== 'google_signup' || decoded.role !== expectedRole) {
+            return null;
+        }
+        return decoded;
+    } catch {
+        return null;
+    }
+};
+
+// Google-linked accounts never log in with a password — generate a random
+// unguessable hash purely to satisfy users.password_hash NOT NULL, matching
+// the exact same pattern googleAuthService.createUserFromGoogle already uses
+// for the login-page's first-time-Google-user path.
+const randomPasswordHash = async () => {
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(randomPassword, salt);
+};
 
 const registerStudent = async (req, res) => {
     try {
-        const { email, password, fullName, school, age, language, gradeLevel, address } = req.body;
+        let { email, password, fullName, school, age, language, gradeLevel, address, googleSignupToken } = req.body;
+
+        const ticket = verifySignupTicket(googleSignupToken, 'student');
+        if (googleSignupToken && !ticket) {
+            return res.status(400).json({ message: 'Invalid or expired Google verification. Please verify again.' });
+        }
+        if (ticket) {
+            // The ticket's email is the one Google actually verified — never
+            // trust a client-supplied email once a ticket is present.
+            email = ticket.email;
+            fullName = fullName || ticket.name || email;
+        } else if (!password) {
+            return res.status(400).json({ message: 'Password is required' });
+        }
 
         const existingUser = await userModel.findUserByEmail(email);
         if (existingUser) return res.status(400).json({ message: 'Email already exists' });
 
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(password, salt);
+        let passwordHash;
+        if (ticket) {
+            passwordHash = await randomPasswordHash();
+        } else {
+            const salt = await bcrypt.genSalt(10);
+            passwordHash = await bcrypt.hash(password, salt);
+        }
 
         // Transaction simulation (Ideally use BEGIN/COMMIT via pg client)
         const user = await userModel.createUserAccount(email, passwordHash, 'student');
@@ -38,14 +91,23 @@ const registerStudent = async (req, res) => {
 
 const registerTutor = async (req, res) => {
     try {
-        const { 
-            email, password, fullName, dob, gender, city, address, 
-            university, degreeTitle, graduationYear, experience, subjects, 
-            gradeRange, level, medium, classType, description 
+        let {
+            email, password, fullName, dob, gender, city, address,
+            university, degreeTitle, graduationYear, experience, subjects,
+            gradeRange, level, medium, classType, description, googleSignupToken
         } = req.body;
 
+        const ticket = verifySignupTicket(googleSignupToken, 'tutor');
+        if (googleSignupToken && !ticket) {
+            return res.status(400).json({ message: 'Invalid or expired Google verification. Please verify again.' });
+        }
+        if (ticket) {
+            email = ticket.email;
+            fullName = fullName || ticket.name || email;
+        }
+
         // Validate required fields
-        if (!email || !password || !fullName) {
+        if (!fullName || (!ticket && (!email || !password))) {
             return res.status(400).json({ message: 'Email, password and full name are required' });
         }
 
@@ -71,11 +133,16 @@ const registerTutor = async (req, res) => {
             }
         }
 
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(password, salt);
+        let passwordHash;
+        if (ticket) {
+            passwordHash = await randomPasswordHash();
+        } else {
+            const salt = await bcrypt.genSalt(10);
+            passwordHash = await bcrypt.hash(password, salt);
+        }
 
         const user = await userModel.createUserAccount(email, passwordHash, 'tutor');
-        const profile = await userModel.createTutorProfile(user.id, { 
+        const profile = await userModel.createTutorProfile(user.id, {
             fullName, dob: dob || null, gender: gender || null, city: city || null, 
             email, address: address || null, profilePictureUrl, bannerUrl, 
             university: university || null, degreeTitle: degreeTitle || null, 
@@ -189,6 +256,34 @@ const loginWithGoogle = async (req, res) => {
     }
 };
 
+// Google Sign-UP: identity check only, creates nothing. Used by the "Sign up
+// with Google" button on the student/tutor detail forms — on success the
+// frontend switches the form into "Google mode" (email locked, password
+// fields hidden) and the account is only actually created once that form is
+// submitted with the returned googleSignupToken (see registerStudent/
+// registerTutor above).
+const googleVerifyForSignup = async (req, res) => {
+    try {
+        const { idToken, role } = req.body;
+
+        if (!idToken) {
+            return res.status(400).json({ message: 'Google ID token is required' });
+        }
+
+        const result = await verifyGoogleEmailForSignup(idToken, role);
+        res.json(result);
+    } catch (error) {
+        if (error instanceof GoogleAccountExistsError) {
+            return res.status(409).json({ message: error.message });
+        }
+        if (error instanceof InvalidRoleError) {
+            return res.status(400).json({ message: error.message });
+        }
+        console.error('[googleVerifyForSignup] Error:', error.message);
+        res.status(401).json({ message: 'Google verification failed' });
+    }
+};
+
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
@@ -270,4 +365,4 @@ const resetPassword = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, forgotPassword, resetPassword };
+module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, googleVerifyForSignup, forgotPassword, resetPassword };

@@ -1,12 +1,14 @@
 const { OAuth2Client } = require('google-auth-library');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const userModel = require('../models/userModel');
 const { generateToken } = require('../utils/jwtHelper');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const VALID_SIGNUP_ROLES = ['student', 'tutor'];
+const SIGNUP_TICKET_TTL = '15m';
 
 /**
  * Thrown when a valid Google ID token is presented, no Mentora account
@@ -19,6 +21,13 @@ class GoogleAccountNotFoundError extends Error {}
 /** Thrown when a role is supplied but isn't 'student' or 'tutor'. */
 class InvalidRoleError extends Error {}
 
+/**
+ * Thrown by verifyGoogleEmailForSignup when the Google-verified email
+ * already has a Mentora account — the frontend should point the user at
+ * /auth/login instead of continuing the signup form.
+ */
+class GoogleAccountExistsError extends Error {}
+
 const verifyGoogleToken = async (idToken) => {
     const ticket = await client.verifyIdToken({
         idToken,
@@ -30,6 +39,44 @@ const verifyGoogleToken = async (idToken) => {
         throw new Error('Google account email is missing or unverified');
     }
     return payload;
+};
+
+/**
+ * Verifies a Google ID token for the SIGNUP flow — identity check only,
+ * creates nothing. Used by the "Sign up with Google" button on the
+ * student/tutor detail forms: the account is only actually created when
+ * the user finishes filling in and submits that form (see
+ * authController.registerStudent/registerTutor's googleSignupToken
+ * handling), not here.
+ *
+ * Returns a short-lived signed "signup ticket" (googleSignupToken) that
+ * proves this email was Google-verified recently, without needing to
+ * re-contact Google or re-parse the original ID token at final submission.
+ */
+const verifyGoogleEmailForSignup = async (idToken, role) => {
+    if (!VALID_SIGNUP_ROLES.includes(role)) {
+        throw new InvalidRoleError('Role must be "student" or "tutor"');
+    }
+
+    const payload = await verifyGoogleToken(idToken);
+
+    const existingUser = await userModel.findUserByEmail(payload.email);
+    if (existingUser) {
+        throw new GoogleAccountExistsError('An account already exists for this email. Please log in instead.');
+    }
+
+    const googleSignupToken = jwt.sign(
+        { email: payload.email, name: payload.name, role, purpose: 'google_signup' },
+        process.env.JWT_SECRET,
+        { expiresIn: SIGNUP_TICKET_TTL }
+    );
+
+    return {
+        email: payload.email,
+        name: payload.name || null,
+        picture: payload.picture || null,
+        googleSignupToken,
+    };
 };
 
 /**
@@ -120,6 +167,8 @@ const loginWithGoogleIdToken = async (idToken, role) => {
 
 module.exports = {
     loginWithGoogleIdToken,
+    verifyGoogleEmailForSignup,
     GoogleAccountNotFoundError,
+    GoogleAccountExistsError,
     InvalidRoleError,
 };
