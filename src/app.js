@@ -43,6 +43,7 @@ app.use('/api/student', studentCommunityRoutes);
 
 // Recommendation Module
 app.use('/api/recommendations', require('./routes/recommendationRoutes'));
+app.use('/api/recommendation', require('./routes/recommendationRoutes'));
 
 const db = require('./config/db');
 

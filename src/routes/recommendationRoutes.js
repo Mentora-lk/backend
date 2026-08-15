@@ -22,6 +22,15 @@ const protectOptional = (req, res, next) => {
   next();
 };
 
+router.get('/', (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'Recommendation API is available.',
+    endpoint: 'POST /api/recommendations'
+  });
+});
+
 router.post('/', protectOptional, recommendationController.getRecommendations);
+router.post('/generate', protectOptional, recommendationController.getRecommendations);
 
 module.exports = router;
