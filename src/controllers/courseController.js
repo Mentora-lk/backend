@@ -1,6 +1,7 @@
 const { pool } = require('../config/db');
+const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
-// GET /api/courses
+//! GET /api/courses
 const getCourses = async (req, res, next) => {
   try {
     const {
@@ -96,56 +97,7 @@ const getCourses = async (req, res, next) => {
   }
 };
 
-// POST /api/courses (Tutor only)
-const createCourse = async (req, res, next) => {
-  try {
-    const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
-    
-    // Validate required fields
-    if (!title || !subject || !fee) {
-      return res.status(400).json({ message: 'Title, subject, and fee are required' });
-    }
-
-    const tutorId = req.user.id; // From authMiddleware
-
-    const result = await pool.query(
-      `INSERT INTO poatad 
-       (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, grade, medium, "createdAt", "updatedAt") 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
-      [tutorId, title, subject, description, fee, schedule, mode || 'both', location || 'Remote', max_students || 50, 'active', image || '', grade || '', medium || '']
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// DELETE /api/courses/:id (Tutor only)
-const deleteCourse = async (req, res, next) => {
-  try {
-    const courseId = req.params.id;
-    const tutorId = req.user.id; // From authMiddleware
-
-    // Verify course belongs to tutor
-    const courseResult = await pool.query('SELECT * FROM poatad WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
-    
-    if (courseResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Course not found or unauthorized' });
-    }
-
-    // Delete enrollments for this course first due to foreign key constraints
-    await pool.query('DELETE FROM enrollments WHERE class_id = $1', [courseId]);
-    await pool.query('DELETE FROM reviews WHERE course_id = $1', [courseId]);
-    await pool.query('DELETE FROM poatad WHERE id = $1', [courseId]);
-
-    res.json({ message: 'Course deleted successfully' });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// GET /api/courses/:id
+//! GET /api/courses/:id
 const getCourseById = async (req, res, next) => {
   try {
     const result = await pool.query(
@@ -209,7 +161,7 @@ const getCourseById = async (req, res, next) => {
   }
 };
 
-// GET reviews
+//! GET reviews
 const getCourseReviews = async (req, res, next) => {
   try {
     // First get the tutor_id for this course
@@ -247,7 +199,7 @@ const getCourseReviews = async (req, res, next) => {
   }
 };
 
-// POST review
+//! POST review
 const addReview = async (req, res, next) => {
   try {
     const { rating, comment } = req.body;
@@ -290,35 +242,7 @@ const addReview = async (req, res, next) => {
   }
 };
 
-// PUT /api/courses/:id (Tutor only)
-const updateCourse = async (req, res, next) => {
-  try {
-    const courseId = req.params.id;
-    const tutorId = req.user.id;
-    const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
-
-    // Verify course belongs to tutor
-    const check = await pool.query('SELECT * FROM poatad WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
-    if (check.rows.length === 0) {
-      return res.status(404).json({ message: 'Course not found or unauthorized' });
-    }
-
-    const result = await pool.query(
-      `UPDATE poatad 
-       SET title = $1, subject = $2, description = $3, fee = $4, schedule = $5, 
-           medium = $6, mode = $7, location = $8, max_students = $9, image = $10, 
-           grade = $11, "updatedAt" = NOW()
-       WHERE id = $12 AND tutor_id = $13 RETURNING *`,
-      [title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade, courseId, tutorId]
-    );
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// GET /api/courses/stats
+//! GET /api/stats — platform statistics for landing page hero
 const getPlatformStats = async (req, res, next) => {
   try {
     const courseCount = await pool.query('SELECT COUNT(*) FROM poatad');
@@ -334,6 +258,83 @@ const getPlatformStats = async (req, res, next) => {
       activeLearners: '5k+',
       successRate: '98%'
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! POST /api/courses
+const createCourse = async (req, res, next) => {
+  try {
+    const tutorId = req.user.id;
+    const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
+    
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/classes', req.file.originalname);
+    }
+
+    const result = await pool.query(
+      `INSERT INTO poatad 
+        (tutor_id, title, subject, description, fee, mode, location, schedule, max_students, status, average_rating, review_count, image)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', 0, 0, $10) RETURNING *`,
+      [tutorId, title, subject, description, fee, mode, location, schedule, max_students, imageUrl]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! PUT /api/courses/:id
+const updateCourse = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id;
+    const { title, subject, description, fee, mode, location, schedule, max_students } = req.body;
+    
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/classes', req.file.originalname);
+    }
+
+    const result = await pool.query(
+      `UPDATE poatad 
+       SET title = COALESCE($1, title),
+           subject = COALESCE($2, subject),
+           description = COALESCE($3, description),
+           fee = COALESCE($4, fee),
+           mode = COALESCE($5, mode),
+           location = COALESCE($6, location),
+           schedule = COALESCE($7, schedule),
+           max_students = COALESCE($8, max_students),
+           image = COALESCE($9, image)
+       WHERE id = $10 AND tutor_id = $11 RETURNING *`,
+      [title, subject, description, fee, mode, location, schedule, max_students, imageUrl, courseId, tutorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! DELETE /api/courses/:id
+const deleteCourse = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id;
+    const result = await pool.query(
+      'DELETE FROM poatad WHERE id = $1 AND tutor_id = $2 RETURNING *',
+      [courseId, tutorId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+    res.json({ message: 'Course deleted successfully' });
   } catch (err) {
     next(err);
   }

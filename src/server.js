@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config();//!Loads data
 const { connectDatabase } = require('./config/db');
 const http = require('http');
 const app = require('./app');
