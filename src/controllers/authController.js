@@ -125,12 +125,15 @@ const loginUser = async (req, res) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
+        const fullName = await userModel.findFullNameByUser(user.id, user.role);
+
         res.json({
             token: generateToken(user.id, user.role),
             user: {
                 id: user.id,
                 email: user.email,
                 role: user.role,
+                fullName,
             },
         });
     } catch (error) {
