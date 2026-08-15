@@ -76,6 +76,28 @@ module.exports = {
     }
   },
 
+  // PUT /api/admin/sessions/:id
+  updateSessionStatus: async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ message: 'Status is required' });
+    }
+    try {
+      const result = await pool.query(
+        'UPDATE enrollments SET status = $1 WHERE id = $2 RETURNING *',
+        [status, id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('Update session status error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // GET /api/admin/payments
   getPayments: async (req, res) => {
     try {
