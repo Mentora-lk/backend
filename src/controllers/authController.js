@@ -125,28 +125,7 @@ const loginUser = async (req, res) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // ── Get name based on role ─────────────────────────────────────────────
-        let userName = email.split('@')[0]; // fallback
-
-        if (user.role === 'student') {
-            const { pool } = require('../config/db');
-            const profileResult = await pool.query(
-                'SELECT full_name FROM student_profiles WHERE user_id = $1',
-                [user.id]
-            );
-            if (profileResult.rows.length > 0) {
-                userName = profileResult.rows[0].full_name;
-            }
-        } else if (user.role === 'tutor') {
-            const { pool } = require('../config/db');
-            const profileResult = await pool.query(
-                'SELECT full_name FROM tutor_profiles WHERE user_id = $1',
-                [user.id]
-            );
-            if (profileResult.rows.length > 0) {
-                userName = profileResult.rows[0].full_name;
-            }
-        }
+        const fullName = await userModel.findFullNameByUser(user.id, user.role);
 
         res.json({
             token: generateToken(user.id, user.role),
@@ -154,7 +133,7 @@ const loginUser = async (req, res) => {
                 id: user.id,
                 email: user.email,
                 role: user.role,
-                name: userName,
+                fullName,
             },
         });
     } catch (error) {

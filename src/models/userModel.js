@@ -13,6 +13,17 @@ const findUserByEmail = async (email) => {
     return result.rows[0];
 };
 
+// Looks up the display name from the role-specific profile table so the
+// frontend can show who's actually logged in instead of placeholder text.
+// Returns null for roles without a profile table (e.g. admin).
+const findFullNameByUser = async (userId, role) => {
+    const table = role === 'tutor' ? 'tutor_profiles' : role === 'student' ? 'student_profiles' : null;
+    if (!table) return null;
+
+    const result = await db.query(`SELECT full_name FROM ${table} WHERE user_id = $1`, [userId]);
+    return result.rows[0]?.full_name || null;
+};
+
 const createStudentProfile = async (userId, data) => {
     const { fullName, school, age, language, gradeLevel, address } = data;
     const result = await db.query(
@@ -121,6 +132,7 @@ const updateStudentProfile = async (userId, data) => {
 module.exports = {
     createUserAccount,
     findUserByEmail,
+    findFullNameByUser,
     createStudentProfile,
     createTutorProfile,
     savePasswordResetToken,
