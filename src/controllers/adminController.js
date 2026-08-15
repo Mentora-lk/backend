@@ -82,6 +82,35 @@ module.exports = {
     }
   },
 
+  // POST /api/admin/students
+  createStudent: async (req, res) => {
+    const { fullName, email, password, gradeLevel, schoolInstitute, phone } = req.body;
+    if (!fullName || !email || !password) {
+      return res.status(400).json({ message: 'Full name, email and password are required' });
+    }
+    try {
+      const exists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+      if (exists.rows.length > 0) {
+        return res.status(400).json({ message: 'Email already registered' });
+      }
+      const password_hash = await hashPassword(password);
+      const userResult = await pool.query(
+        `INSERT INTO users (email, password_hash, role, is_verified) VALUES ($1, $2, 'student', true) RETURNING id`,
+        [email, password_hash]
+      );
+      const userId = userResult.rows[0].id;
+      await pool.query(
+        `INSERT INTO student_profiles (user_id, full_name, grade_level, school_institute, phone)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [userId, fullName, gradeLevel || null, schoolInstitute || null, phone || null]
+      );
+      res.status(201).json({ message: 'Student created successfully' });
+    } catch (err) {
+      console.error('Create student error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // GET /api/admin/sessions (READ ONLY from enrollments)
   getSessions: async (req, res) => {
     try {
