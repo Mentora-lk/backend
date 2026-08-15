@@ -207,6 +207,25 @@ module.exports = {
     }
   },
 
+  // POST /api/admin/ads
+  createAd: async (req, res) => {
+    const { tutorId, title, description, price } = req.body;
+    if (!tutorId || !title) {
+      return res.status(400).json({ message: 'Tutor and title are required' });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO advertisements (tutor_id, title, description, price, status, created_at)
+         VALUES ($1, $2, $3, $4, 'pending', NOW())`,
+        [tutorId, title, description || null, price || null]
+      );
+      res.status(201).json({ message: 'Advertisement created successfully' });
+    } catch (err) {
+      console.error('Create ad error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // PUT /api/admin/ads/:id
   updateAdStatus: async (req, res) => {
     const { id } = req.params;
