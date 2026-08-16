@@ -15,7 +15,7 @@ router.post(
 router.post('/login', loginUser);
 router.post('/google', loginWithGoogle);
 router.post('/forgot-password', forgotPassword);
-router.put('/reset-password/:token', resetPassword);
+router.post('/reset-password', resetPassword);
 router.delete('/account', protect, deleteAccount);
 
 // Existing Tutor Route

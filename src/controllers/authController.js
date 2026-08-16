@@ -3,7 +3,7 @@ const userModel = require('../models/userModel');
 const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 const crypto = require('crypto');
-const sendEmail = require('../utils/sendEmail');
+const sendOtpEmail = require('../utils/sendOtpEmail');
 const { loginWithGoogleIdToken, GoogleAccountNotFoundError, InvalidRoleError } = require('../services/googleAuthService');
 
 const registerStudent = async (req, res) => {
@@ -115,11 +115,8 @@ const loginUser = async (req, res) => {
         }
 
         console.log('[loginUser] User found, id:', user.id, 'role:', user.role);
-        console.log('[loginUser] Stored hash:', user.password_hash);
-        console.log('[loginUser] Provided password length:', password ? password.length : 'NO PASSWORD');
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        console.log('[loginUser] Password match result:', isMatch);
 
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid credentials' });
@@ -188,38 +185,32 @@ const forgotPassword = async (req, res) => {
         const { email } = req.body;
         const user = await userModel.findUserByEmail(email);
 
+        // Always answer the same way whether or not the address is registered —
+        // a 404 here would let anyone enumerate which emails have accounts.
+        const genericResponse = { message: 'If an account exists for that email, a verification code has been sent.' };
+
         if (!user) {
-            return res.status(404).json({ message: 'User with this email does not exist' });
+            // The response stays deliberately uninformative, but the server log
+            // tells the truth so this isn't a silent no-op while developing.
+            console.log('[forgotPassword] no account for:', email);
+            return res.status(200).json(genericResponse);
         }
 
-        // Generate reset token
-        const resetToken = crypto.randomBytes(32).toString('hex');
+        // Generate a 6-digit OTP
+        const otp = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
 
-        // Hash token and set expiration
-        const resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        
+        // Hash OTP and set expiration
+        const resetPasswordToken = crypto.createHash('sha256').update(otp).digest('hex');
+
         // Expiration: 10 minutes from now
         const resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
 
         // Save to database
         await userModel.savePasswordResetToken(email, resetPasswordToken, resetPasswordExpires);
 
-        // Create reset URL
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const resetUrl = `${frontendUrl}/auth/reset-password/${resetToken}`;
-
-        console.log(`\n\n=== PASSWORD RESET URL ===\n${resetUrl}\n==========================\n\n`);
-
-        const message = `You are receiving this email because you (or someone else) has requested the reset of your password. Please navigate to the following link to complete the process:\n\n${resetUrl}`;
-
         try {
-            await sendEmail({
-                email: user.email,
-                subject: 'Password Reset Token',
-                message
-            });
-
-            res.status(200).json({ message: 'Email sent' });
+            await sendOtpEmail(user.email, otp);
+            res.status(200).json(genericResponse);
         } catch (error) {
             console.error('[forgotPassword] Error sending email:', error.message);
             await userModel.savePasswordResetToken(email, null, null);
@@ -234,20 +225,40 @@ const forgotPassword = async (req, res) => {
 
 const resetPassword = async (req, res) => {
     try {
-        const { token } = req.params;
-        const { newPassword } = req.body;
+        const { email, otp, newPassword } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+        }
+
+        if (!otp) {
+            return res.status(400).json({ message: 'Verification code is required' });
+        }
 
         if (!newPassword || newPassword.length < 8) {
             return res.status(400).json({ message: 'Password must be at least 8 characters long' });
         }
 
-        // Hash token to compare with DB
-        const resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
+        // Hash OTP to compare with DB
+        const resetPasswordToken = crypto.createHash('sha256').update(otp).digest('hex');
 
-        const user = await userModel.findUserByResetToken(resetPasswordToken);
+        const user = await userModel.findUserByEmailAndResetToken(email, resetPasswordToken);
 
         if (!user) {
-            return res.status(400).json({ message: 'Invalid or expired password reset token' });
+            // Distinguish an aged-out code from a wrong one. A correct-but-expired
+            // code isn't a guessing attempt, so it must not count against the
+            // attempt limit — otherwise a slow user burns their own valid code.
+            const expired = await userModel.findUserByEmailAndResetTokenIgnoringExpiry(email, resetPasswordToken);
+            if (expired) {
+                return res.status(400).json({ message: 'That code has expired. Request a new one and try again.' });
+            }
+
+            // Count the miss so a wrong code can't be guessed repeatedly; once
+            // the limit is hit the model clears the code outright.
+            await userModel.incrementResetAttempts(email);
+            return res.status(400).json({
+                message: 'That is not the current code. Use the code from the most recent email, or request a new one.',
+            });
         }
 
         // Hash new password
