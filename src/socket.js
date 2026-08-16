@@ -1,6 +1,18 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
+// Tracks which user IDs currently have at least one live socket connection
+// (a user can have multiple sockets open — multiple tabs/devices).
+// Exposed so REST controllers (e.g. messageController) can report online status.
+const onlineUsers = new Map(); // userId -> Set<socketId>
+
+const isUserOnline = (userId) => {
+  const sockets = onlineUsers.get(String(userId));
+  return !!sockets && sockets.size > 0;
+};
+
+const getOnlineUserIds = () => Array.from(onlineUsers.keys());
+
 /**
  * Initialises Socket.io on the given HTTP server and returns the `io` instance.
  * The `io` instance is also attached to `app.locals.io` so any Express
@@ -38,7 +50,16 @@ const initSocket = (httpServer, app) => {
 
   // ── Connection Handler ────────────────────────────────────────────────────
   io.on('connection', (socket) => {
-    console.log(`[Socket.io] User connected: ${socket.user.id} (socket: ${socket.id})`);
+    const userId = String(socket.user.id);
+    console.log(`[Socket.io] User connected: ${userId} (socket: ${socket.id})`);
+
+    // Every authenticated socket auto-joins a room keyed to its own user id,
+    // so any part of the server can push a direct-message event to this user
+    // via `io.to('user:<id>').emit(...)` without tracking socket ids itself.
+    socket.join(`user:${userId}`);
+
+    if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
+    onlineUsers.get(userId).add(socket.id);
 
     /**
      * Event: join_community
@@ -71,8 +92,33 @@ const initSocket = (httpServer, app) => {
       console.log(`[Socket.io] User ${socket.user.id} left room: ${room}`);
     });
 
+    /**
+     * Direct-message typing indicator relay.
+     * Event: typing / stop_typing
+     * Payload: { to: string | number } — the recipient user id
+     *
+     * Message persistence/broadcast itself happens over REST
+     * (POST /api/messages/:userId) so it goes through the same auth +
+     * validation path as the rest of the API; these two events only relay a
+     * lightweight, non-persisted "is typing" signal to the other user.
+     */
+    socket.on('typing', ({ to }) => {
+      if (!to) return;
+      io.to(`user:${to}`).emit('typing', { from: userId });
+    });
+
+    socket.on('stop_typing', ({ to }) => {
+      if (!to) return;
+      io.to(`user:${to}`).emit('stop_typing', { from: userId });
+    });
+
     socket.on('disconnect', () => {
-      console.log(`[Socket.io] User disconnected: ${socket.user.id}`);
+      console.log(`[Socket.io] User disconnected: ${userId}`);
+      const sockets = onlineUsers.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) onlineUsers.delete(userId);
+      }
     });
   });
 
@@ -83,3 +129,5 @@ const initSocket = (httpServer, app) => {
 };
 
 module.exports = initSocket;
+module.exports.isUserOnline = isUserOnline;
+module.exports.getOnlineUserIds = getOnlineUserIds;

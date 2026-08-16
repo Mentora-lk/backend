@@ -8,6 +8,7 @@ const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
+const messageRoutes = require('./routes/messageRoutes');
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
+app.use('/api/messages', messageRoutes);
 
 // Community Module
 app.use('/api/student', studentCommunityRoutes);
