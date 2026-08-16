@@ -3,8 +3,11 @@ const express = require('express');
 const {
   discoverCommunities,
   requestCommunityAccess,
+  cancelCommunityRequest,
+  getMyPendingRequests,
   getMyClasses,
   getMyDeadlines,
+  getCommunityStats,
   getCommunityFeed,
   togglePostReaction,
   downloadMaterial,
@@ -22,11 +25,14 @@ router.use(protect, restrictTo('student'));
 // POST /api/student/communities/:id/request
 router.get('/communities/discover', discoverCommunities);
 router.post('/communities/:id/request', requestCommunityAccess);
+router.delete('/communities/:id/request', cancelCommunityRequest);
+router.get('/communities/my-requests', getMyPendingRequests);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 // GET  /api/student/communities/my-classes
 // GET  /api/student/deadlines
 router.get('/communities/my-classes', getMyClasses);
+router.get('/communities/stats', getCommunityStats);
 router.get('/deadlines', getMyDeadlines);
 
 // ── Feed & Engagement ─────────────────────────────────────────────────────────

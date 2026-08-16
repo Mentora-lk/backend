@@ -13,6 +13,17 @@ const findUserByEmail = async (email) => {
     return result.rows[0];
 };
 
+// Looks up the display name from the role-specific profile table so the
+// frontend can show who's actually logged in instead of placeholder text.
+// Returns null for roles without a profile table (e.g. admin).
+const findFullNameByUser = async (userId, role) => {
+    const table = role === 'tutor' ? 'tutor_profiles' : role === 'student' ? 'student_profiles' : null;
+    if (!table) return null;
+
+    const result = await db.query(`SELECT full_name FROM ${table} WHERE user_id = $1`, [userId]);
+    return result.rows[0]?.full_name || null;
+};
+
 const createStudentProfile = async (userId, data) => {
     const { fullName, school, age, language, gradeLevel, address } = data;
     const result = await db.query(
@@ -65,6 +76,25 @@ const findUserByResetToken = async (hashedToken) => {
     return result.rows[0];
 };
 
+// Deletes a user account and everything not already handled by an
+// ON DELETE CASCADE foreign key. Verified against the live schema:
+//   - `requests.student_id` is ON DELETE NO ACTION, so it would block the
+//     user delete with a constraint violation unless removed first.
+//   - `student_profiles` has NO foreign key to users at all, so it would
+//     silently orphan unless removed explicitly (tutor_profiles, by
+//     contrast, already cascades on its own).
+//   - Everything else referencing users.id (tutor_profiles, communities,
+//     community_memberships, deadline_submissions, messages, post_comments,
+//     post_reactions, posts, reviews) is ON DELETE CASCADE already.
+const deleteUserAccount = async (userId, role) => {
+    await db.query('DELETE FROM requests WHERE student_id = $1', [userId]);
+    if (role === 'student') {
+        await db.query('DELETE FROM student_profiles WHERE user_id = $1', [userId]);
+    }
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [userId]);
+    return result.rows[0];
+};
+
 const updatePassword = async (userId, newPasswordHash) => {
     const result = await db.query(
         'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2 RETURNING id, email',
@@ -73,12 +103,61 @@ const updatePassword = async (userId, newPasswordHash) => {
     return result.rows[0];
 };
 
+const getStudentProfile = async (userId) => {
+    const result = await db.query(
+        `SELECT u.email, u.role, sp.full_name, sp.school_institute, sp.age, sp.language, sp.grade_level, sp.address, sp.phone, sp.bio, sp.profile_picture_url 
+         FROM users u
+         LEFT JOIN student_profiles sp ON u.id = sp.user_id
+         WHERE u.id = $1`,
+        [userId]
+    );
+    return result.rows[0];
+};
+
+const updateStudentProfile = async (userId, data) => {
+    const { fullName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl } = data;
+    
+    // 1. Try to update existing profile
+    const result = await db.query(
+        `UPDATE student_profiles 
+         SET full_name = COALESCE($2, full_name),
+             school_institute = COALESCE($3, school_institute),
+             age = COALESCE($4, age),
+             language = COALESCE($5, language),
+             grade_level = COALESCE($6, grade_level),
+             address = COALESCE($7, address),
+             phone = COALESCE($8, phone),
+             bio = COALESCE($9, bio),
+             profile_picture_url = COALESCE($10, profile_picture_url)
+         WHERE user_id = $1
+         RETURNING *`,
+        [userId, fullName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl]
+    );
+
+    if (result.rows.length === 0) {
+        // 2. If it does not exist, insert it
+        const fallbackName = fullName || 'Student';
+        const insertResult = await db.query(
+            `INSERT INTO student_profiles (user_id, full_name, school_institute, age, language, grade_level, address, phone, bio, profile_picture_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING *`,
+            [userId, fallbackName, school, age, language, gradeLevel, address, phone, bio, profilePictureUrl]
+        );
+        return insertResult.rows[0];
+    }
+    return result.rows[0];
+};
+
 module.exports = {
     createUserAccount,
     findUserByEmail,
+    findFullNameByUser,
     createStudentProfile,
     createTutorProfile,
     savePasswordResetToken,
     findUserByResetToken,
-    updatePassword
+    updatePassword,
+    getStudentProfile,
+    updateStudentProfile,
+    deleteUserAccount
 };

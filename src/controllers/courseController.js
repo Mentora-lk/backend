@@ -1,6 +1,28 @@
 const { pool } = require('../config/db');
+const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
-// GET /api/courses
+// `courses.schedule` is a jsonb column expected to hold a {day: string[]}
+// object, but the tutor "Post Ad"/"Edit Ad" forms still submit a single
+// free-text string (e.g. "Saturdays 9AM – 12PM") — a bare string like that
+// isn't valid JSON on its own, so Postgres would reject the INSERT/UPDATE
+// with a jsonb-cast error. Wrap it as a JSON string scalar instead so the
+// write always succeeds; if the value is already valid JSON (a future
+// structured {day:[times]} payload), pass it through unchanged.
+// NOTE: courses created via the current free-text form will still show an
+// unusable schedule to students (same underlying limitation as before) —
+// a proper day/time-slot picker for tutors is a separate follow-up.
+const toScheduleJsonb = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') return JSON.stringify(value);
+  try {
+    JSON.parse(value);
+    return value; // already valid JSON text
+  } catch {
+    return JSON.stringify(value); // wrap raw text as a JSON string scalar
+  }
+};
+
+//! GET /api/courses
 const getCourses = async (req, res, next) => {
   try {
     const {
@@ -68,7 +90,7 @@ const getCourses = async (req, res, next) => {
 
     // Count
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM poatad c WHERE ${where.join(' AND ')}`,
+      `SELECT COUNT(*) FROM courses c WHERE ${where.join(' AND ')}`,
       params
     );
 
@@ -76,8 +98,8 @@ const getCourses = async (req, res, next) => {
 
     // Courses with tutor info
     const coursesResult = await pool.query(
-      `SELECT c.*, t.full_name as tutor_name 
-       FROM poatad c
+      `SELECT c.*, t.full_name as tutor_name
+       FROM courses c
        LEFT JOIN tutor_profiles t ON c.tutor_id = t.user_id
        WHERE ${where.join(' AND ')}
        ORDER BY c.${orderBy}
@@ -100,7 +122,7 @@ const getCourses = async (req, res, next) => {
 const createCourse = async (req, res, next) => {
   try {
     const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
-    
+
     // Validate required fields
     if (!title || !subject || !fee) {
       return res.status(400).json({ message: 'Title, subject, and fee are required' });
@@ -109,10 +131,10 @@ const createCourse = async (req, res, next) => {
     const tutorId = req.user.id; // From authMiddleware
 
     const result = await pool.query(
-      `INSERT INTO poatad 
-       (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, grade, medium, "createdAt", "updatedAt") 
+      `INSERT INTO courses
+       (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, grade, medium, "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
-      [tutorId, title, subject, description, fee, schedule, mode || 'both', location || 'Remote', max_students || 50, 'active', image || '', grade || '', medium || '']
+      [tutorId, title, subject, description, fee, toScheduleJsonb(schedule), mode || 'both', location || 'Remote', max_students || 50, 'active', image || '', grade || '', medium || '']
     );
 
     res.status(201).json(result.rows[0]);
@@ -128,8 +150,8 @@ const deleteCourse = async (req, res, next) => {
     const tutorId = req.user.id; // From authMiddleware
 
     // Verify course belongs to tutor
-    const courseResult = await pool.query('SELECT * FROM poatad WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
-    
+    const courseResult = await pool.query('SELECT * FROM courses WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
+
     if (courseResult.rows.length === 0) {
       return res.status(404).json({ message: 'Course not found or unauthorized' });
     }
@@ -137,7 +159,7 @@ const deleteCourse = async (req, res, next) => {
     // Delete enrollments for this course first due to foreign key constraints
     await pool.query('DELETE FROM enrollments WHERE class_id = $1', [courseId]);
     await pool.query('DELETE FROM reviews WHERE course_id = $1', [courseId]);
-    await pool.query('DELETE FROM poatad WHERE id = $1', [courseId]);
+    await pool.query('DELETE FROM courses WHERE id = $1', [courseId]);
 
     res.json({ message: 'Course deleted successfully' });
   } catch (err) {
@@ -149,7 +171,7 @@ const deleteCourse = async (req, res, next) => {
 const getCourseById = async (req, res, next) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM poatad WHERE id = $1',
+      'SELECT * FROM courses WHERE id = $1',
       [req.params.id]
     );
 
@@ -209,12 +231,12 @@ const getCourseById = async (req, res, next) => {
   }
 };
 
-// GET reviews
+//! GET reviews
 const getCourseReviews = async (req, res, next) => {
   try {
     // First get the tutor_id for this course
     const courseResult = await pool.query(
-      'SELECT tutor_id FROM poatad WHERE id = $1',
+      'SELECT tutor_id FROM courses WHERE id = $1',
       [req.params.id]
     );
 
@@ -247,7 +269,7 @@ const getCourseReviews = async (req, res, next) => {
   }
 };
 
-// POST review
+//! POST review
 const addReview = async (req, res, next) => {
   try {
     const { rating, comment } = req.body;
@@ -259,7 +281,7 @@ const addReview = async (req, res, next) => {
 
     // Get tutor_id from course
     const courseResult = await pool.query(
-      'SELECT tutor_id FROM poatad WHERE id = $1',
+      'SELECT tutor_id FROM courses WHERE id = $1',
       [courseId]
     );
 
@@ -298,18 +320,18 @@ const updateCourse = async (req, res, next) => {
     const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
 
     // Verify course belongs to tutor
-    const check = await pool.query('SELECT * FROM poatad WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
+    const check = await pool.query('SELECT * FROM courses WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
     if (check.rows.length === 0) {
       return res.status(404).json({ message: 'Course not found or unauthorized' });
     }
 
     const result = await pool.query(
-      `UPDATE poatad 
-       SET title = $1, subject = $2, description = $3, fee = $4, schedule = $5, 
-           medium = $6, mode = $7, location = $8, max_students = $9, image = $10, 
+      `UPDATE courses
+       SET title = $1, subject = $2, description = $3, fee = $4, schedule = $5,
+           medium = $6, mode = $7, location = $8, max_students = $9, image = $10,
            grade = $11, "updatedAt" = NOW()
        WHERE id = $12 AND tutor_id = $13 RETURNING *`,
-      [title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade, courseId, tutorId]
+      [title, subject, description, fee, toScheduleJsonb(schedule), medium, mode, location, max_students, image, grade, courseId, tutorId]
     );
 
     res.json(result.rows[0]);
@@ -321,7 +343,7 @@ const updateCourse = async (req, res, next) => {
 // GET /api/courses/stats
 const getPlatformStats = async (req, res, next) => {
   try {
-    const courseCount = await pool.query('SELECT COUNT(*) FROM poatad');
+    const courseCount = await pool.query('SELECT COUNT(*) FROM courses');
     const tutorCount = await pool.query('SELECT COUNT(*) FROM tutor_profiles');
     const studentCount = await pool.query('SELECT COUNT(*) FROM users WHERE role = $1', ['student']);
     const reviewCount = await pool.query('SELECT COUNT(*) FROM reviews');

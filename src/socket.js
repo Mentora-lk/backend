@@ -40,6 +40,11 @@ const initSocket = (httpServer, app) => {
   io.on('connection', (socket) => {
     console.log(`[Socket.io] User connected: ${socket.user.id} (socket: ${socket.id})`);
 
+    // Auto-join a personal room so controllers can push events to this exact
+    // user (e.g. a tutor getting a new membership request) without needing
+    // them to have joined any particular community room first.
+    socket.join(`user:${socket.user.id}`);
+
     /**
      * Event: join_community
      * Payload: { communityId: string | number }
