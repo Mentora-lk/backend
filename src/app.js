@@ -9,6 +9,7 @@ const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 
@@ -16,11 +17,21 @@ const app = express();
 app.use(cors());
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true }));
+app.use(express.text()); // Parse text responses
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n📍 ${req.method} ${req.path}`);
+  console.log('  Headers:', Object.keys(req.headers));
+  console.log('  Authorization:', req.headers.authorization ? 'YES' : 'NO');
+  next();
+});
 
 //! Activate and use these routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tutors', tutorRoutes);
+app.use('/api/students', studentRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -99,3 +110,36 @@ app.get('/api/db-status', async (req, res) => {
         });
     }
 });
+
+// Health Check
+app.get('/', (req, res) => {
+    res.send('Mentora API is running...');
+});
+
+// Global Error Handler (catch-all for unhandled errors)
+app.use((err, req, res, next) => {
+    console.error('Unhandled Error:', err);
+    
+    // Don't expose error stack in production
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    res.status(err.status || 500).json({
+        status: 'error',
+        message: err.message || 'Internal Server Error',
+        ...(isDevelopment && { stack: err.stack })
+    });
+});
+
+// 404 Handler
+app.use((req, res) => {
+    console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+    console.log(`   Looking for: ${req.path}`);
+    console.log(`   Available routes start with: /api/auth, /api/users, /api/tutors, /api/courses, /api/tutor, /api/student`);
+    res.status(404).json({
+        status: 'error',
+        message: 'Route not found',
+        attempted: `${req.method} ${req.originalUrl}`
+    });
+});
+
+module.exports = app;
