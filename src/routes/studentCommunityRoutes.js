@@ -7,6 +7,7 @@ const {
   getMyPendingRequests,
   getMyClasses,
   getMyDeadlines,
+  getCommunityStats,
   getCommunityFeed,
   togglePostReaction,
   downloadMaterial,
@@ -31,6 +32,7 @@ router.get('/communities/my-requests', getMyPendingRequests);
 // GET  /api/student/communities/my-classes
 // GET  /api/student/deadlines
 router.get('/communities/my-classes', getMyClasses);
+router.get('/communities/stats', getCommunityStats);
 router.get('/deadlines', getMyDeadlines);
 
 // ── Feed & Engagement ─────────────────────────────────────────────────────────

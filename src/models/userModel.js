@@ -76,6 +76,25 @@ const findUserByResetToken = async (hashedToken) => {
     return result.rows[0];
 };
 
+// Deletes a user account and everything not already handled by an
+// ON DELETE CASCADE foreign key. Verified against the live schema:
+//   - `requests.student_id` is ON DELETE NO ACTION, so it would block the
+//     user delete with a constraint violation unless removed first.
+//   - `student_profiles` has NO foreign key to users at all, so it would
+//     silently orphan unless removed explicitly (tutor_profiles, by
+//     contrast, already cascades on its own).
+//   - Everything else referencing users.id (tutor_profiles, communities,
+//     community_memberships, deadline_submissions, messages, post_comments,
+//     post_reactions, posts, reviews) is ON DELETE CASCADE already.
+const deleteUserAccount = async (userId, role) => {
+    await db.query('DELETE FROM requests WHERE student_id = $1', [userId]);
+    if (role === 'student') {
+        await db.query('DELETE FROM student_profiles WHERE user_id = $1', [userId]);
+    }
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [userId]);
+    return result.rows[0];
+};
+
 const updatePassword = async (userId, newPasswordHash) => {
     const result = await db.query(
         'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2 RETURNING id, email',
@@ -139,5 +158,6 @@ module.exports = {
     findUserByResetToken,
     updatePassword,
     getStudentProfile,
-    updateStudentProfile
+    updateStudentProfile,
+    deleteUserAccount
 };
