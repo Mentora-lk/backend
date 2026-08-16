@@ -9,8 +9,9 @@ const discoverCommunities = async (req, res, next) => {
     const studentId = req.user.id;
     const { tag } = req.query;
 
-    // Base query: exclude communities where the student already has a membership
-    // (regardless of status — pending, approved, or declined still appears once)
+    // Base query: exclude communities where the student has an active membership
+    // request (pending or approved). A declined request should NOT permanently
+    // hide the community — it must reappear so the student can re-request.
     let query = `
       SELECT
         c.id,
@@ -18,16 +19,16 @@ const discoverCommunities = async (req, res, next) => {
         c.description,
         c.tags,
         c.created_at,
-        tp.full_name  AS tutor_name,
+        COALESCE(tp.full_name, 'Unknown') AS tutor_name,
         tp.profile_picture_url AS tutor_avatar,
         (SELECT COUNT(*) FROM community_memberships cm2
          WHERE cm2.community_id = c.id AND cm2.status = 'approved') AS member_count
       FROM communities c
-      JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
+      LEFT JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
       WHERE c.id NOT IN (
         SELECT community_id
         FROM community_memberships
-        WHERE student_id = $1
+        WHERE student_id = $1 AND status IN ('pending', 'approved')
       )
     `;
 
@@ -66,15 +67,22 @@ const requestCommunityAccess = async (req, res, next) => {
       return res.status(404).json({ message: 'Community not found' });
     }
 
-    // Guard: no duplicate request
+    // Guard: block only if there's an ACTIVE (pending/approved) request.
+    // A prior declined request should not block a fresh request — remove the
+    // stale declined row so the INSERT below can create a clean new one.
     const existing = await pool.query(
       'SELECT id, status FROM community_memberships WHERE community_id = $1 AND student_id = $2',
       [communityId, studentId]
     );
     if (existing.rows.length > 0) {
-      return res.status(409).json({
-        message: `You already have a membership request with status: ${existing.rows[0].status}`,
-      });
+      const currentStatus = existing.rows[0].status;
+      if (currentStatus === 'pending' || currentStatus === 'approved') {
+        return res.status(409).json({
+          message: `You already have a membership request with status: ${currentStatus}`,
+        });
+      }
+      // currentStatus === 'declined' — clear the stale row before re-requesting
+      await pool.query('DELETE FROM community_memberships WHERE id = $1', [existing.rows[0].id]);
     }
 
     const result = await pool.query(
@@ -84,10 +92,91 @@ const requestCommunityAccess = async (req, res, next) => {
       [communityId, studentId]
     );
 
+    // Notify the community's tutor in real time (same shape as
+    // tutorCommunityController.getPendingRequests) so their "Student
+    // Requests" widget updates without a refresh.
+    const notifyResult = await pool.query(
+      `SELECT cm.id AS membership_id, cm.status, cm.requested_at,
+              COALESCE(sp.full_name, 'Unknown') AS student_name,
+              c.name AS community_name, c.tutor_id
+       FROM community_memberships cm
+       JOIN communities c ON cm.community_id = c.id
+       LEFT JOIN student_profiles sp ON sp.user_id = cm.student_id
+       WHERE cm.id = $1`,
+      [result.rows[0].id]
+    );
+    const requestData = notifyResult.rows[0];
+    const io = req.app.locals.io;
+    if (io && requestData) {
+      io.to(`user:${requestData.tutor_id}`).emit('new_membership_request', requestData);
+    }
+
     res.status(201).json({
       message: 'Request submitted successfully',
       membership: result.rows[0],
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/student/communities/:id/request
+// Cancels (withdraws) the caller's own PENDING membership request.
+// Does NOT allow cancelling an already-approved or already-declined membership.
+// ─────────────────────────────────────────────────────────────────────────────
+const cancelCommunityRequest = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const communityId = parseInt(req.params.id, 10);
+
+    const result = await pool.query(
+      `DELETE FROM community_memberships
+       WHERE community_id = $1 AND student_id = $2 AND status = 'pending'
+       RETURNING id`,
+      [communityId, studentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'No pending request found for this community' });
+    }
+
+    res.status(200).json({ message: 'Request cancelled successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/student/communities/my-requests
+// Returns the student's own PENDING membership requests, with community info.
+// Needed because discoverCommunities deliberately excludes pending/approved
+// communities — without this, a requested community just disappears from the
+// UI on refresh with no way to see it's pending or cancel it.
+// ─────────────────────────────────────────────────────────────────────────────
+const getMyPendingRequests = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+
+    const result = await pool.query(
+      `SELECT
+         cm.id AS membership_id,
+         cm.requested_at,
+         c.id AS community_id,
+         c.name,
+         c.description,
+         c.tags,
+         COALESCE(tp.full_name, 'Unknown') AS tutor_name,
+         tp.profile_picture_url AS tutor_avatar
+       FROM community_memberships cm
+       JOIN communities c ON c.id = cm.community_id
+       LEFT JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
+       WHERE cm.student_id = $1 AND cm.status = 'pending'
+       ORDER BY cm.requested_at DESC`,
+      [studentId]
+    );
+
+    res.json(result.rows);
   } catch (err) {
     next(err);
   }
@@ -108,20 +197,41 @@ const getMyClasses = async (req, res, next) => {
          c.description,
          c.tags,
          c.created_at,
-         tp.full_name  AS tutor_name,
+         COALESCE(tp.full_name, 'Unknown') AS tutor_name,
          tp.profile_picture_url AS tutor_avatar,
          cm.requested_at AS joined_at,
          (SELECT COUNT(*) FROM community_memberships cm2
           WHERE cm2.community_id = c.id AND cm2.status = 'approved') AS member_count
        FROM communities c
        JOIN community_memberships cm ON cm.community_id = c.id
-       JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
+       LEFT JOIN tutor_profiles tp ON tp.user_id = c.tutor_id
        WHERE cm.student_id = $1 AND cm.status = 'approved'
        ORDER BY c.name ASC`,
       [studentId]
     );
 
     res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/student/communities/stats
+// Platform-wide community activity numbers for the Discover sidebar — replaces
+// hardcoded filler ("4,850 active students / 156 posts today / 1.2K resources")
+// that used to be shown regardless of real activity.
+// ─────────────────────────────────────────────────────────────────────────────
+const getCommunityStats = async (req, res, next) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(DISTINCT student_id) FROM community_memberships WHERE status = 'approved')::int AS "activeStudents",
+        (SELECT COUNT(*) FROM posts WHERE created_at >= CURRENT_DATE)::int AS "postsToday",
+        (SELECT COUNT(*) FROM posts WHERE media_url IS NOT NULL)::int AS "resourcesShared"
+    `);
+
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -187,6 +297,7 @@ const getCommunityFeed = async (req, res, next) => {
          p.type,
          p.content,
          p.media_url,
+         p.poll_options,
          p.is_pinned,
          p.created_at,
          p.author_id,
@@ -271,11 +382,70 @@ const togglePostReaction = async (req, res, next) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/student/posts/:id/download
+// Returns download URL for material attached to a post.
+// Student must be an approved member of the community to download.
+// ─────────────────────────────────────────────────────────────────────────────
+const downloadMaterial = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const postId = parseInt(req.params.id, 10);
+
+    // Fetch post details with community info
+    const postResult = await pool.query(
+      `SELECT p.id, p.media_url, p.community_id, p.created_at
+       FROM posts p
+       WHERE p.id = $1`,
+      [postId]
+    );
+
+    if (postResult.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'Post not found' });
+    }
+
+    const post = postResult.rows[0];
+
+    if (!post.media_url) {
+      return res.status(404).json({ status: 'error', message: 'No material attached to this post' });
+    }
+
+    // Verify student is an approved member of the community
+    const memberCheck = await pool.query(
+      `SELECT id FROM community_memberships
+       WHERE community_id = $1 AND student_id = $2 AND status = 'approved'`,
+      [post.community_id, studentId]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        status: 'error', 
+        message: 'You do not have permission to download this material' 
+      });
+    }
+
+    // Return the Cloudinary URL for download
+    res.status(200).json({ 
+      status: 'success', 
+      data: { 
+        download_url: post.media_url,
+        message: 'Click the URL to download the material'
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   discoverCommunities,
   requestCommunityAccess,
+  cancelCommunityRequest,
+  getMyPendingRequests,
   getMyClasses,
   getMyDeadlines,
+  getCommunityStats,
   getCommunityFeed,
   togglePostReaction,
+  downloadMaterial,
 };

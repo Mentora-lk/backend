@@ -19,7 +19,10 @@ router.post("/test-email", testEnrollmentEmail);
 router.post("/", protect, createEnrollment);
 
 // Protected routes — require student authentication
+// "/me" and "/mine" both resolve to the same handler — the frontend's two
+// enrollment service files (booking.ts, enrollmentService.ts) call "/mine".
 router.get("/me", protect, authorize('student'), getMyEnrollments);
+router.get("/mine", protect, authorize('student'), getMyEnrollments);
 router.get("/schedule", protect, authorize('student'), getMySchedule);
 router.get("/me/schedule", protect, authorize('student'), getMySchedule);
 router.patch("/:id", protect, updateEnrollmentStatus);

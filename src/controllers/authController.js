@@ -4,6 +4,7 @@ const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
+const { loginWithGoogleIdToken, GoogleAccountNotFoundError, InvalidRoleError } = require('../services/googleAuthService');
 
 const registerStudent = async (req, res) => {
     try {
@@ -73,23 +74,16 @@ const registerTutor = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
-        // Normalize subjects into a clean comma-separated string (tutor_profiles.subject is a plain varchar, not an array)
-        let subjectsValue = subjects || null;
-        if (typeof subjects === 'string' && subjects.trim()) {
-            const subjectArray = subjects.split(',').map(s => s.trim()).filter(Boolean);
-            subjectsValue = subjectArray.join(', ');
-        }
-
         const user = await userModel.createUserAccount(email, passwordHash, 'tutor');
-        const profile = await userModel.createTutorProfile(user.id, {
-            fullName, dob: dob || null, gender: gender || null, city: city || null,
-            email, address: address || null, profilePictureUrl, bannerUrl,
-            university: university || null, degreeTitle: degreeTitle || null,
-            graduationYear: graduationYear || null, experience: experience || null,
-            subject: subjectsValue,
-            gradeRange: gradeRange || null, level: level || null,
-            medium: medium || null, classType: classType || null,
-            description: description || null
+        const profile = await userModel.createTutorProfile(user.id, { 
+            fullName, dob: dob || null, gender: gender || null, city: city || null, 
+            email, address: address || null, profilePictureUrl, bannerUrl, 
+            university: university || null, degreeTitle: degreeTitle || null, 
+            graduationYear: graduationYear || null, experience: experience || null, 
+            subjects: subjects || null, 
+            gradeRange: gradeRange || null, level: level || null, 
+            medium: medium || null, classType: classType || null, 
+            description: description || null 
         });
 
         res.status(201).json({
@@ -131,28 +125,7 @@ const loginUser = async (req, res) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // ── Get name based on role ─────────────────────────────────────────────
-        let userName = email.split('@')[0]; // fallback
-
-        if (user.role === 'student') {
-            const { pool } = require('../config/db');
-            const profileResult = await pool.query(
-                'SELECT full_name FROM student_profiles WHERE user_id = $1',
-                [user.id]
-            );
-            if (profileResult.rows.length > 0) {
-                userName = profileResult.rows[0].full_name;
-            }
-        } else if (user.role === 'tutor') {
-            const { pool } = require('../config/db');
-            const profileResult = await pool.query(
-                'SELECT full_name FROM tutor_profiles WHERE user_id = $1',
-                [user.id]
-            );
-            if (profileResult.rows.length > 0) {
-                userName = profileResult.rows[0].full_name;
-            }
-        }
+        const fullName = await userModel.findFullNameByUser(user.id, user.role);
 
         res.json({
             token: generateToken(user.id, user.role),
@@ -160,12 +133,53 @@ const loginUser = async (req, res) => {
                 id: user.id,
                 email: user.email,
                 role: user.role,
-                name: userName,
+                fullName,
             },
         });
     } catch (error) {
         console.error('[loginUser] Error:', error.message);
         res.status(500).json({ message: error.message || 'Server error' });
+    }
+};
+
+// Google Sign-In: logs in an existing user whose email matches the verified
+// Google account. If no account exists and `role` ('student'|'tutor') is
+// provided, a new account + minimal profile is created automatically —
+// see googleAuthService.js.
+const loginWithGoogle = async (req, res) => {
+    try {
+        const { idToken, role } = req.body;
+
+        if (!idToken) {
+            return res.status(400).json({ message: 'Google ID token is required' });
+        }
+
+        const result = await loginWithGoogleIdToken(idToken, role);
+        res.json(result);
+    } catch (error) {
+        if (error instanceof GoogleAccountNotFoundError) {
+            return res.status(404).json({ message: error.message });
+        }
+        if (error instanceof InvalidRoleError) {
+            return res.status(400).json({ message: error.message });
+        }
+        console.error('[loginWithGoogle] Error:', error.message);
+        res.status(401).json({ message: 'Google authentication failed' });
+    }
+};
+
+// Deletes the logged-in user's own account. `req.user` comes from the
+// `protect` middleware (decoded JWT payload: { id, role }).
+const deleteAccount = async (req, res) => {
+    try {
+        const deleted = await userModel.deleteUserAccount(req.user.id, req.user.role);
+        if (!deleted) {
+            return res.status(404).json({ message: 'Account not found' });
+        }
+        res.status(200).json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        console.error('[deleteAccount] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
     }
 };
 
@@ -250,4 +264,4 @@ const resetPassword = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser, forgotPassword, resetPassword };
+module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword };
