@@ -1,5 +1,5 @@
 const { pool } = require('../config/db');
-const { hashPassword } = require('../utils/passwordHash');
+const { hashPassword, comparePassword } = require('../utils/passwordHash');
 
 module.exports = {
   // GET /api/admin/dashboard
@@ -238,6 +238,72 @@ module.exports = {
       res.json({ message: 'Ad status updated' });
     } catch (err) {
       console.error('Update ad error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  // GET /api/admin/me
+  getMe: async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, full_name, email, admin_code, contact_number, photo_url, created_at
+         FROM admins WHERE id = $1`,
+        [req.admin.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Admin not found' });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('Get admin profile error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  // PUT /api/admin/me
+  updateMe: async (req, res) => {
+    const { fullName, contactNumber, photoUrl } = req.body;
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({ message: 'Full name is required' });
+    }
+    try {
+      const result = await pool.query(
+        `UPDATE admins SET full_name = $1, contact_number = $2, photo_url = $3
+         WHERE id = $4
+         RETURNING id, full_name, email, admin_code, contact_number, photo_url, created_at`,
+        [fullName.trim(), contactNumber || null, photoUrl || null, req.admin.id]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('Update admin profile error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  // PUT /api/admin/me/password
+  changePassword: async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current and new password are required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters' });
+    }
+    try {
+      const result = await pool.query('SELECT * FROM admins WHERE id = $1', [req.admin.id]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Admin not found' });
+      }
+      const admin = result.rows[0];
+      const isMatch = await comparePassword(currentPassword, admin.password_hash);
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Current password is incorrect' });
+      }
+      const password_hash = await hashPassword(newPassword);
+      await pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [password_hash, req.admin.id]);
+      res.json({ message: 'Password updated successfully' });
+    } catch (err) {
+      console.error('Change password error:', err);
       res.status(500).json({ message: 'Server error' });
     }
   },
