@@ -4,6 +4,7 @@ const { generateToken } = require('../utils/jwtHelper');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 const crypto = require('crypto');
 const sendOtpEmail = require('../utils/sendOtpEmail');
+const emailVerificationModel = require('../models/emailVerificationModel');
 const { loginWithGoogleIdToken, GoogleAccountNotFoundError, InvalidRoleError } = require('../services/googleAuthService');
 
 const registerStudent = async (req, res) => {
@@ -13,12 +14,22 @@ const registerStudent = async (req, res) => {
         const existingUser = await userModel.findUserByEmail(email);
         if (existingUser) return res.status(400).json({ message: 'Email already exists' });
 
+        const verification = await emailVerificationModel.isEmailCurrentlyVerified(email);
+        if (!verification) {
+            return res.status(400).json({ message: 'Please verify your email address before completing registration.' });
+        }
+
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
         // Transaction simulation (Ideally use BEGIN/COMMIT via pg client)
         const user = await userModel.createUserAccount(email, passwordHash, 'student');
         const profile = await userModel.createStudentProfile(user.id, { fullName, school, age, language, gradeLevel, address });
+
+        // Best-effort cleanup — don't fail a successful registration over this.
+        emailVerificationModel.clearEmailVerification(email).catch((err) =>
+            console.warn('[registerStudent] Failed to clear email_verifications row:', err.message)
+        );
 
         res.status(201).json({
             token: generateToken(user.id, user.role),
@@ -52,6 +63,11 @@ const registerTutor = async (req, res) => {
         const existingUser = await userModel.findUserByEmail(email);
         if (existingUser) return res.status(400).json({ message: 'Email already exists' });
 
+        const verification = await emailVerificationModel.isEmailCurrentlyVerified(email);
+        if (!verification) {
+            return res.status(400).json({ message: 'Please verify your email address before completing registration.' });
+        }
+
         let profilePictureUrl = null;
         let bannerUrl = null;
 
@@ -83,8 +99,13 @@ const registerTutor = async (req, res) => {
             subjects: subjects || null, 
             gradeRange: gradeRange || null, level: level || null, 
             medium: medium || null, classType: classType || null, 
-            description: description || null 
+            description: description || null
         });
+
+        // Best-effort cleanup — don't fail a successful registration over this.
+        emailVerificationModel.clearEmailVerification(email).catch((err) =>
+            console.warn('[registerTutor] Failed to clear email_verifications row:', err.message)
+        );
 
         res.status(201).json({
             token: generateToken(user.id, user.role),
@@ -275,4 +296,66 @@ const resetPassword = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword };
+const sendEmailVerification = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ message: 'Email is required' });
+
+        // Unlike forgotPassword, no anti-enumeration reason to hide this —
+        // registerStudent/registerTutor already reveal "Email already exists"
+        // at submit time, so surfacing it here too isn't a new leak.
+        const existingUser = await userModel.findUserByEmail(email);
+        if (existingUser) {
+            return res.status(400).json({ message: 'An account with this email already exists.' });
+        }
+
+        const otp = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+        const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+        const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+        await emailVerificationModel.saveEmailVerificationOtp(email, otpHash, otpExpires);
+
+        try {
+            await sendOtpEmail(email, otp, 'verify-email');
+            return res.status(200).json({ message: 'Verification code sent to your email.' });
+        } catch (error) {
+            console.error('[sendEmailVerification] Error sending email:', error.message);
+            await emailVerificationModel.saveEmailVerificationOtp(email, null, null);
+            return res.status(500).json({ message: 'Email could not be sent' });
+        }
+    } catch (error) {
+        console.error('[sendEmailVerification] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+const verifyEmailCode = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        if (!email) return res.status(400).json({ message: 'Email is required' });
+        if (!otp) return res.status(400).json({ message: 'Verification code is required' });
+
+        const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+        const record = await emailVerificationModel.findVerificationByEmailAndOtp(email, otpHash);
+
+        if (!record) {
+            const expired = await emailVerificationModel.findVerificationByEmailAndOtpIgnoringExpiry(email, otpHash);
+            if (expired) {
+                return res.status(400).json({ message: 'That code has expired. Request a new one and try again.' });
+            }
+
+            await emailVerificationModel.incrementVerificationAttempts(email);
+            return res.status(400).json({
+                message: 'That is not the current code. Use the code from the most recent email, or request a new one.',
+            });
+        }
+
+        await emailVerificationModel.markEmailVerified(email);
+        res.status(200).json({ message: 'Email verified.', verified: true });
+    } catch (error) {
+        console.error('[verifyEmailCode] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword, sendEmailVerification, verifyEmailCode };
