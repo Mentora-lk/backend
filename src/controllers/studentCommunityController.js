@@ -217,6 +217,27 @@ const getMyClasses = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/student/communities/stats
+// Platform-wide community activity numbers for the Discover sidebar — replaces
+// hardcoded filler ("4,850 active students / 156 posts today / 1.2K resources")
+// that used to be shown regardless of real activity.
+// ─────────────────────────────────────────────────────────────────────────────
+const getCommunityStats = async (req, res, next) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(DISTINCT student_id) FROM community_memberships WHERE status = 'approved')::int AS "activeStudents",
+        (SELECT COUNT(*) FROM posts WHERE created_at >= CURRENT_DATE)::int AS "postsToday",
+        (SELECT COUNT(*) FROM posts WHERE media_url IS NOT NULL)::int AS "resourcesShared"
+    `);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/student/deadlines
 // Returns upcoming deadlines from all approved communities, ordered by due_date.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,6 +444,7 @@ module.exports = {
   getMyPendingRequests,
   getMyClasses,
   getMyDeadlines,
+  getCommunityStats,
   getCommunityFeed,
   togglePostReaction,
   downloadMaterial,

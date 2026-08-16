@@ -168,6 +168,21 @@ const loginWithGoogle = async (req, res) => {
     }
 };
 
+// Deletes the logged-in user's own account. `req.user` comes from the
+// `protect` middleware (decoded JWT payload: { id, role }).
+const deleteAccount = async (req, res) => {
+    try {
+        const deleted = await userModel.deleteUserAccount(req.user.id, req.user.role);
+        if (!deleted) {
+            return res.status(404).json({ message: 'Account not found' });
+        }
+        res.status(200).json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        console.error('[deleteAccount] Error:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
@@ -249,4 +264,4 @@ const resetPassword = async (req, res) => {
     }
 };
 
-module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, forgotPassword, resetPassword };
+module.exports = { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword };
