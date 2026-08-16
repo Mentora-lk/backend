@@ -6,6 +6,15 @@ const { pool } = require('../config/db');
 const getProfile = async (req, res) => {
     try {
         const userId = req.user.id;
+
+        if (req.user.role === 'tutor') {
+            const profile = await userModel.getTutorProfile(userId);
+            if (!profile) {
+                return res.status(404).json({ message: 'Profile not found' });
+            }
+            return res.json(profile);
+        }
+
         const profile = await userModel.getStudentProfile(userId);
         if (!profile) {
             return res.status(404).json({ message: 'Profile not found' });
@@ -33,8 +42,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { fullName, school, age, language, gradeLevel, address, phone, bio } = req.body;
-        
+
         let profilePictureUrl = null;
         if (req.file) {
             try {
@@ -43,6 +51,42 @@ const updateProfile = async (req, res) => {
                 console.warn('[updateProfile] Profile picture upload failed:', uploadErr.message);
             }
         }
+
+        if (req.user.role === 'tutor') {
+            const {
+                fullName, dob, gender, city, address, phone, university, degreeTitle,
+                graduationYear, experience, subject, gradeRange, level, medium,
+                classType, description
+            } = req.body;
+
+            const data = {
+                fullName: fullName || null,
+                dob: dob || null,
+                gender: gender || null,
+                city: city || null,
+                address: address || null,
+                phone: phone || null,
+                university: university || null,
+                degreeTitle: degreeTitle || null,
+                graduationYear: graduationYear ? parseInt(graduationYear) : null,
+                experience: experience || null,
+                subject: subject || null,
+                gradeRange: gradeRange || null,
+                level: level || null,
+                medium: medium || null,
+                classType: classType || null,
+                description: description || null,
+                profilePictureUrl
+            };
+
+            const updatedProfile = await userModel.updateTutorProfile(userId, data);
+            return res.json({
+                message: 'Profile updated successfully',
+                profile: updatedProfile
+            });
+        }
+
+        const { fullName, school, age, language, gradeLevel, address, phone, bio } = req.body;
 
         const data = {
             fullName: fullName || null,

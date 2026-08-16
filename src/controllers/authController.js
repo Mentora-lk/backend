@@ -73,24 +73,23 @@ const registerTutor = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
-        // Convert subjects string to PostgreSQL array format if needed
+        // Normalize subjects into a clean comma-separated string (tutor_profiles.subject is a plain varchar, not an array)
         let subjectsValue = subjects || null;
         if (typeof subjects === 'string' && subjects.trim()) {
-            // Convert comma-separated string like "Mathematics, Physics" to a PG array literal "{Mathematics,Physics}"
             const subjectArray = subjects.split(',').map(s => s.trim()).filter(Boolean);
-            subjectsValue = `{${subjectArray.join(',')}}`;
+            subjectsValue = subjectArray.join(', ');
         }
 
         const user = await userModel.createUserAccount(email, passwordHash, 'tutor');
-        const profile = await userModel.createTutorProfile(user.id, { 
-            fullName, dob: dob || null, gender: gender || null, city: city || null, 
-            email, address: address || null, profilePictureUrl, bannerUrl, 
-            university: university || null, degreeTitle: degreeTitle || null, 
-            graduationYear: graduationYear || null, experience: experience || null, 
-            subjects: subjectsValue, 
-            gradeRange: gradeRange || null, level: level || null, 
-            medium: medium || null, classType: classType || null, 
-            description: description || null 
+        const profile = await userModel.createTutorProfile(user.id, {
+            fullName, dob: dob || null, gender: gender || null, city: city || null,
+            email, address: address || null, profilePictureUrl, bannerUrl,
+            university: university || null, degreeTitle: degreeTitle || null,
+            graduationYear: graduationYear || null, experience: experience || null,
+            subject: subjectsValue,
+            gradeRange: gradeRange || null, level: level || null,
+            medium: medium || null, classType: classType || null,
+            description: description || null
         });
 
         res.status(201).json({

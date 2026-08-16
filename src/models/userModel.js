@@ -24,25 +24,25 @@ const createStudentProfile = async (userId, data) => {
 };
 
 const createTutorProfile = async (userId, data) => {
-    const { 
-        fullName, dob, gender, city, email, address, profilePictureUrl, bannerUrl, 
-        university, degreeTitle, graduationYear, experience, subjects, 
-        gradeRange, level, medium, classType, description 
+    const {
+        fullName, dob, gender, city, email, address, profilePictureUrl, bannerUrl,
+        university, degreeTitle, graduationYear, experience, subject,
+        gradeRange, level, medium, classType, description
     } = data;
-    
+
     const result = await db.query(
         `INSERT INTO tutor_profiles (
-            user_id, full_name, dob, gender, city, email, address, 
-            profile_picture_url, banner_url, university, degree_title, 
-            graduation_year, experience, subjects, grade_range, level, 
+            user_id, full_name, dob, gender, city, email, address,
+            profile_picture_url, banner_url, university, degree_title,
+            graduation_year, experience, subject, grade_range, level,
             medium, class_type, description
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
         ) RETURNING *`,
         [
-            userId, fullName, dob, gender, city, email, address, 
-            profilePictureUrl, bannerUrl, university, degreeTitle, 
-            graduationYear, experience, subjects, gradeRange, level, 
+            userId, fullName, dob, gender, city, email, address,
+            profilePictureUrl, bannerUrl, university, degreeTitle,
+            graduationYear, experience, subject, gradeRange, level,
             medium, classType, description
         ]
     );
@@ -118,6 +118,72 @@ const updateStudentProfile = async (userId, data) => {
     return result.rows[0];
 };
 
+const getTutorProfile = async (userId) => {
+    const result = await db.query(
+        `SELECT u.email, u.role, tp.full_name, tp.dob, tp.gender, tp.city, tp.address, tp.phone,
+                tp.profile_picture_url, tp.banner_url, tp.university, tp.degree_title, tp.graduation_year,
+                tp.experience, tp.subject, tp.grade_range, tp.level, tp.medium, tp.class_type, tp.description
+         FROM users u
+         LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
+         WHERE u.id = $1`,
+        [userId]
+    );
+    return result.rows[0];
+};
+
+const updateTutorProfile = async (userId, data) => {
+    const {
+        fullName, dob, gender, city, address, phone, university, degreeTitle,
+        graduationYear, experience, subject, gradeRange, level, medium,
+        classType, description, profilePictureUrl
+    } = data;
+
+    // 1. Try to update existing profile
+    const result = await db.query(
+        `UPDATE tutor_profiles
+         SET full_name = COALESCE($2, full_name),
+             dob = COALESCE($3, dob),
+             gender = COALESCE($4, gender),
+             city = COALESCE($5, city),
+             address = COALESCE($6, address),
+             phone = COALESCE($7, phone),
+             university = COALESCE($8, university),
+             degree_title = COALESCE($9, degree_title),
+             graduation_year = COALESCE($10, graduation_year),
+             experience = COALESCE($11, experience),
+             subject = COALESCE($12, subject),
+             grade_range = COALESCE($13, grade_range),
+             level = COALESCE($14, level),
+             medium = COALESCE($15, medium),
+             class_type = COALESCE($16, class_type),
+             description = COALESCE($17, description),
+             profile_picture_url = COALESCE($18, profile_picture_url)
+         WHERE user_id = $1
+         RETURNING *`,
+        [userId, fullName, dob, gender, city, address, phone, university, degreeTitle,
+         graduationYear, experience, subject, gradeRange, level, medium, classType,
+         description, profilePictureUrl]
+    );
+
+    if (result.rows.length === 0) {
+        // 2. If it does not exist, insert it
+        const fallbackName = fullName || 'Tutor';
+        const insertResult = await db.query(
+            `INSERT INTO tutor_profiles (
+                user_id, full_name, dob, gender, city, address, phone, university,
+                degree_title, graduation_year, experience, subject, grade_range,
+                level, medium, class_type, description, profile_picture_url
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+             RETURNING *`,
+            [userId, fallbackName, dob, gender, city, address, phone, university, degreeTitle,
+             graduationYear, experience, subject, gradeRange, level, medium, classType,
+             description, profilePictureUrl]
+        );
+        return insertResult.rows[0];
+    }
+    return result.rows[0];
+};
+
 module.exports = {
     createUserAccount,
     findUserByEmail,
@@ -127,5 +193,7 @@ module.exports = {
     findUserByResetToken,
     updatePassword,
     getStudentProfile,
-    updateStudentProfile
+    updateStudentProfile,
+    getTutorProfile,
+    updateTutorProfile
 };
