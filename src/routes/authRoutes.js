@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword } = require('../controllers/authController');
+const { registerStudent, registerTutor, loginUser, loginWithGoogle, deleteAccount, forgotPassword, resetPassword, sendEmailVerification, verifyEmailCode } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+router.post('/send-verification', sendEmailVerification);
+router.post('/verify-email', verifyEmailCode);
 router.post('/register/student', registerStudent);
 router.post(
     '/register/tutor', 
@@ -15,7 +17,7 @@ router.post(
 router.post('/login', loginUser);
 router.post('/google', loginWithGoogle);
 router.post('/forgot-password', forgotPassword);
-router.put('/reset-password/:token', resetPassword);
+router.post('/reset-password', resetPassword);
 router.delete('/account', protect, deleteAccount);
 
 // Existing Tutor Route
