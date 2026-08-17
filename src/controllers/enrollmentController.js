@@ -3,6 +3,34 @@
 const { pool } = require('../config/db');
 const sendEmail = require('../utils/sendEmail');
 const enrollmentEmailTemplate = require('../utils/enrollmentEmailTemplate');
+const enrollmentStatusEmailTemplate = require('../utils/enrollmentStatusEmailTemplate');
+
+// Shared required-field check for both creating and editing an enrollment's
+// content fields. classId is validated separately by callers since it only
+// applies to creation (the enrolled class isn't editable after the fact).
+function validateEnrollmentFields({ fullName, email, phone, grade, selectedDay, selectedTime }) {
+  if (!fullName || !email || !phone || !grade || !selectedDay || !selectedTime) {
+    return 'Missing required enrollment fields';
+  }
+  return null;
+}
+
+// Single enrollment joined with its course/tutor info — the same shape
+// getMyEnrollments returns per row. Shared by getEnrollmentById and
+// updateEnrollmentDetails so both stay in sync with GET /mine.
+async function fetchEnrollmentWithCourse(id) {
+  const result = await pool.query(
+    `SELECT e.*, c.title, c.subject, c.mode, c.location, c.fee, c.image,
+            c.average_rating, c.max_students, c.schedule, c.badge,
+            tp.full_name AS tutor_name, tp.id AS tutor_id, tp.profile_picture_url AS tutor_avatar
+     FROM enrollments e
+     LEFT JOIN courses c ON e.class_id = c.id
+     LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
+     WHERE e.id = $1`,
+    [id]
+  );
+  return result.rows[0];
+}
 
 //!POST /api/enrollments
 const createEnrollment = async (req, res, next) => {
@@ -20,8 +48,13 @@ const createEnrollment = async (req, res, next) => {
       selectedTime,
     } = req.body;
 
-    if (!classId || !fullName || !email || !phone || !grade || !selectedDay || !selectedTime) {
+    if (!classId) {
       return res.status(400).json({ message: 'Missing required enrollment fields' });
+    }
+
+    const validationError = validateEnrollmentFields({ fullName, email, phone, grade, selectedDay, selectedTime });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
     }
 
     // Use authenticated user's ID, fallback to 1 if not authenticated
@@ -99,9 +132,9 @@ const createEnrollment = async (req, res, next) => {
     try {
       // Get course info and tutor email/name from tutor_profiles table
       const courseResult = await pool.query(
-        `SELECT c.title, c.tutor_id, tp.email AS tutor_email, tp.full_name AS tutor_name 
-         FROM courses c 
-         LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id 
+        `SELECT c.title, c.tutor_id, tp.email AS tutor_email, tp.full_name AS tutor_name
+         FROM courses c
+         LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
          WHERE c.id = $1`,
         [classId]
       );
@@ -269,9 +302,51 @@ const updateEnrollmentStatus = async (req, res, next) => {
       [status, req.params.id]
     );
 
+    const enrollment = updateResult.rows[0];
+
+    // ── Notify the student when a tutor makes a decision ──────────────────
+    if (status === 'approved' || status === 'rejected') {
+      try {
+        const courseResult = await pool.query(
+          `SELECT c.title, tp.full_name AS tutor_name
+           FROM courses c
+           LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
+           WHERE c.id = $1`,
+          [enrollment.class_id]
+        );
+
+        if (courseResult.rows.length > 0 && enrollment.email) {
+          const { title, tutor_name } = courseResult.rows[0];
+
+          const html = enrollmentStatusEmailTemplate({
+            studentName: enrollment.full_name,
+            courseName: title,
+            tutorName: tutor_name,
+            status,
+            selectedDay: enrollment.selected_day,
+            selectedTime: enrollment.selected_time,
+          });
+
+          await sendEmail({
+            email: enrollment.email,
+            subject: status === 'approved'
+              ? `🎉 You're in! Enrollment approved — ${title}`
+              : `Update on your enrollment — ${title}`,
+            message: `Your enrollment for ${title} has been ${status}.`,
+            html,
+          });
+
+          console.log(`✅ Enrollment status email sent to: ${enrollment.email}`);
+        }
+      } catch (emailErr) {
+        // Email failure does NOT fail the status update
+        console.warn('⚠️ Enrollment status email failed:', emailErr.message);
+      }
+    }
+
     res.json({
       message: `Enrollment ${status}`,
-      enrollment: updateResult.rows[0],
+      enrollment,
     });
   } catch (err) {
     next(err);
@@ -305,6 +380,104 @@ const deleteEnrollment = async (req, res, next) => {
     );
 
     res.json({ message: 'Enrollment removed' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! GET /api/enrollments/:id
+const getEnrollmentById = async (req, res, next) => {
+  try {
+    const enrollment = await fetchEnrollmentWithCourse(req.params.id);
+
+    if (!enrollment) {
+      return res.status(404).json({ message: 'Enrollment not found' });
+    }
+
+    if (enrollment.student_id !== req.user.id) {
+      return res.status(403).json({ message: 'Not your enrollment' });
+    }
+
+    res.json(enrollment);
+  } catch (err) {
+    next(err);
+  }
+};
+
+//! PUT /api/enrollments/:id — edit content fields (not status) while still 'requested'
+const updateEnrollmentDetails = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const { id } = req.params;
+    const {
+      fullName,
+      email,
+      phone,
+      school,
+      grade,
+      message,
+      preferredMode,
+      selectedDay,
+      selectedTime,
+    } = req.body;
+
+    const validationError = validateEnrollmentFields({ fullName, email, phone, grade, selectedDay, selectedTime });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
+    const existingResult = await pool.query(
+      'SELECT * FROM enrollments WHERE id = $1',
+      [id]
+    );
+
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Enrollment not found' });
+    }
+
+    const enrollment = existingResult.rows[0];
+
+    if (enrollment.student_id !== studentId) {
+      return res.status(403).json({ message: 'Not your enrollment' });
+    }
+
+    if (enrollment.status !== 'requested') {
+      return res.status(400).json({ message: 'This enrollment can no longer be edited' });
+    }
+
+    // status re-checked in the WHERE clause to guard against a tutor acting
+    // on the enrollment between the check above and this write
+    const updateResult = await pool.query(
+      `UPDATE enrollments
+       SET full_name = $1, email = $2, phone = $3, school = $4, grade = $5, message = $6,
+           preferred_mode = $7, selected_day = $8, selected_time = $9, "updatedAt" = NOW()
+       WHERE id = $10 AND student_id = $11 AND status = 'requested'
+       RETURNING id`,
+      [
+        fullName,
+        email,
+        phone,
+        school || null,
+        grade,
+        message || null,
+        preferredMode || enrollment.preferred_mode,
+        selectedDay,
+        selectedTime,
+        id,
+        studentId,
+      ]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(409).json({ message: 'Enrollment status changed, please refresh and try again' });
+    }
+
+    const updatedEnrollment = await fetchEnrollmentWithCourse(id);
+
+    res.json({
+      message: 'Enrollment updated successfully',
+      enrollment: updatedEnrollment,
+    });
   } catch (err) {
     next(err);
   }
@@ -351,7 +524,9 @@ module.exports = {
   createEnrollment,
   getMyEnrollments,
   getMySchedule,
+  getEnrollmentById,
   updateEnrollmentStatus,
+  updateEnrollmentDetails,
   deleteEnrollment,
   testEnrollmentEmail,
 };

@@ -4,7 +4,9 @@ const {
   createEnrollment,
   getMyEnrollments,
   getMySchedule,
+  getEnrollmentById,
   updateEnrollmentStatus,
+  updateEnrollmentDetails,
   deleteEnrollment,
   testEnrollmentEmail,
 } = require('../controllers/enrollmentController');
@@ -25,6 +27,8 @@ router.get("/me", protect, authorize('student'), getMyEnrollments);
 router.get("/mine", protect, authorize('student'), getMyEnrollments);
 router.get("/schedule", protect, authorize('student'), getMySchedule);
 router.get("/me/schedule", protect, authorize('student'), getMySchedule);
+router.get("/:id", protect, authorize('student'), getEnrollmentById);
+router.put("/:id", protect, authorize('student'), updateEnrollmentDetails);
 router.patch("/:id", protect, updateEnrollmentStatus);
 router.delete("/:id", protect, deleteEnrollment);
 

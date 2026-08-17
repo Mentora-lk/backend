@@ -5,7 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage --collectCoverageFrom=\"src/utils/sendEmail.js\" --collectCoverageFrom=\"src/utils/enrollmentEmailTemplate.js\" --collectCoverageFrom=\"src/controllers/enrollmentController.js\""
   },
   "keywords": [
     "tutoring",
@@ -28,6 +30,7 @@
     "streamifier": "^0.1.1"
   },
   "devDependencies": {
+    "jest": "^30.4.2",
     "nodemon": "^2.0.20"
   }
 }

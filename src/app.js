@@ -10,6 +10,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 
 // Community Module

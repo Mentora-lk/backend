@@ -234,28 +234,15 @@ const getCourseById = async (req, res, next) => {
 //! GET reviews
 const getCourseReviews = async (req, res, next) => {
   try {
-    // First get the tutor_id for this course
-    const courseResult = await pool.query(
-      'SELECT tutor_id FROM courses WHERE id = $1',
-      [req.params.id]
-    );
-
-    if (courseResult.rows.length === 0) {
-      return res.json([]);
-    }
-
-    const tutorId = courseResult.rows[0].tutor_id;
-
-    // Get reviews for this tutor
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         r.*,
         sp.full_name AS student_name
        FROM reviews r
        LEFT JOIN student_profiles sp ON r.student_id = sp.user_id
-       WHERE r.tutor_id = $1
+       WHERE r.course_id = $1
        ORDER BY r."createdAt" DESC`,
-      [tutorId]
+      [req.params.id]
     );
 
     const reviews = result.rows.map(r => ({
@@ -300,10 +287,27 @@ const addReview = async (req, res, next) => {
       return res.status(403).json({ message: 'Must be enrolled' });
     }
 
+    const duplicate = await pool.query(
+      'SELECT id FROM reviews WHERE student_id = $1 AND course_id = $2',
+      [req.user.id, courseId]
+    );
+
+    if (duplicate.rows.length > 0) {
+      return res.status(409).json({ message: 'You have already reviewed this course' });
+    }
+
     const inserted = await pool.query(
-      `INSERT INTO reviews (student_id, tutor_id, rating, comment, "createdAt","updatedAt")
-       VALUES ($1,$2,$3,$4,NOW(),NOW()) RETURNING *`,
-      [req.user.id, tutorId, rating, comment]
+      `INSERT INTO reviews (student_id, tutor_id, course_id, rating, comment, "createdAt","updatedAt")
+       VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) RETURNING *`,
+      [req.user.id, tutorId, courseId, rating, comment]
+    );
+
+    await pool.query(
+      `UPDATE courses
+       SET average_rating = (SELECT COALESCE(AVG(rating), 0) FROM reviews WHERE course_id = $1),
+           review_count = (SELECT COUNT(*) FROM reviews WHERE course_id = $1)
+       WHERE id = $1`,
+      [courseId]
     );
 
     res.status(201).json(inserted.rows[0]);
@@ -347,6 +351,7 @@ const getPlatformStats = async (req, res, next) => {
     const tutorCount = await pool.query('SELECT COUNT(*) FROM tutor_profiles');
     const studentCount = await pool.query('SELECT COUNT(*) FROM users WHERE role = $1', ['student']);
     const reviewCount = await pool.query('SELECT COUNT(*) FROM reviews');
+    const subjectCount = await pool.query(`SELECT COUNT(DISTINCT subject) FROM courses WHERE status = 'active'`);
 
     res.json({
       totalCourses: parseInt(courseCount.rows[0].count),
@@ -354,7 +359,11 @@ const getPlatformStats = async (req, res, next) => {
       totalStudents: parseInt(studentCount.rows[0].count),
       totalReviews: parseInt(reviewCount.rows[0].count),
       activeLearners: '5k+',
-      successRate: '98%'
+      successRate: '98%',
+      // Landing page stat cards read these exact field names (src/services/classService.ts getPlatformStats)
+      activeTutors: parseInt(tutorCount.rows[0].count),
+      studentsEnrolled: parseInt(studentCount.rows[0].count),
+      subjectsAvailable: parseInt(subjectCount.rows[0].count),
     });
   } catch (err) {
     next(err);
