@@ -111,6 +111,42 @@ const getContacts = async (req, res) => {
 };
 
 /**
+ * GET /api/messages/unread-count
+ *
+ * Unread DM count for the current user, both as a single total (sidebar
+ * badge) and broken down per sender with their display name (bell dropdown
+ * text, e.g. "3 new messages from Jane Silva") — cheaper than getContacts(),
+ * which also joins avatars/last-message/subject for the full contact list.
+ */
+const getUnreadCount = async (req, res) => {
+  try {
+    const bySenderResult = await pool.query(
+      `SELECT m.sender_id AS "senderId",
+              COALESCE(sp.full_name, tp.full_name, tp.name, 'Unknown User') AS "senderName",
+              COUNT(*)::int AS count
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       LEFT JOIN student_profiles sp ON sp.user_id = m.sender_id AND u.role = 'student'
+       LEFT JOIN tutor_profiles tp ON tp.user_id = m.sender_id AND u.role = 'tutor'
+       WHERE m.recipient_id = $1 AND m.is_read = false
+       GROUP BY m.sender_id, sp.full_name, tp.full_name, tp.name
+       ORDER BY count DESC`,
+      [req.user.id]
+    );
+
+    const totalUnread = bySenderResult.rows.reduce((sum, r) => sum + r.count, 0);
+
+    res.status(200).json({
+      status: 'success',
+      data: { totalUnread, bySender: bySenderResult.rows },
+    });
+  } catch (error) {
+    console.error('❌ Error fetching unread message count:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
  * GET /api/messages/:userId
  *
  * Returns the full message history between the current user and :userId,
@@ -143,7 +179,11 @@ const getMessages = async (req, res) => {
 
       const io = req.app.locals.io;
       if (io) {
+        // To the other party: updates their "· Read" receipt on the messages they sent.
         io.to(`user:${otherId}`).emit('messages_read', { by: myId, messageIds: unreadIds });
+        // Back to the reader's own other tabs/devices: clears their bell/sidebar
+        // unread badge for this sender without waiting on any other trigger.
+        io.to(`user:${myId}`).emit('messages_read', { by: myId, messageIds: unreadIds });
       }
     }
 
@@ -196,4 +236,4 @@ const sendMessage = async (req, res) => {
   }
 };
 
-module.exports = { getContacts, getMessages, sendMessage };
+module.exports = { getContacts, getMessages, sendMessage, getUnreadCount };

@@ -10,6 +10,8 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const studentCommunityRoutes = require('./routes/studentCommunityRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 
@@ -38,6 +40,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tutor', require('./routes/tutorCommunityRoutes'));
 app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Community Module
 app.use('/api/student', studentCommunityRoutes);

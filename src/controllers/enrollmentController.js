@@ -3,6 +3,7 @@
 const { pool } = require('../config/db');
 const sendEmail = require('../utils/sendEmail');
 const enrollmentEmailTemplate = require('../utils/enrollmentEmailTemplate');
+const { createNotification } = require('./notificationController');
 
 //!POST /api/enrollments
 const createEnrollment = async (req, res, next) => {
@@ -94,6 +95,22 @@ const createEnrollment = async (req, res, next) => {
     );
 
     const enrollment = bookingResult.rows[0];
+
+    // ── Notify tutor in-app (real-time via socket + persisted row) ─────────
+    try {
+      await createNotification({
+        io: req.app.locals.io,
+        userId: course.tutor_id,
+        type: 'enrollment_request',
+        title: 'New enrollment request',
+        body: `${fullName} requested to join "${course.title}"`,
+        relatedColumn: 'related_enrollment_id',
+        relatedId: enrollment.id,
+      });
+    } catch (notifErr) {
+      // A notification failure must not fail the enrollment request itself.
+      console.warn('⚠️ Notification creation failed:', notifErr.message);
+    }
 
     // ── Send email notification to tutor ──────────────────────────────────
     try {
@@ -269,9 +286,33 @@ const updateEnrollmentStatus = async (req, res, next) => {
       [status, req.params.id]
     );
 
+    const updated = updateResult.rows[0];
+
+    // ── Notify student in-app (real-time via socket + persisted row) ───────
+    if (status === 'approved' || status === 'rejected') {
+      try {
+        const courseResult = await pool.query('SELECT title FROM courses WHERE id = $1', [updated.class_id]);
+        const courseTitle = courseResult.rows[0]?.title || 'the class';
+        await createNotification({
+          io: req.app.locals.io,
+          userId: updated.student_id,
+          type: 'enrollment_status',
+          title: status === 'approved' ? 'Enrollment approved' : 'Enrollment rejected',
+          body:
+            status === 'approved'
+              ? `Your request to join "${courseTitle}" was approved`
+              : `Your request to join "${courseTitle}" was rejected`,
+          relatedColumn: 'related_enrollment_id',
+          relatedId: updated.id,
+        });
+      } catch (notifErr) {
+        console.warn('⚠️ Notification creation failed:', notifErr.message);
+      }
+    }
+
     res.json({
       message: `Enrollment ${status}`,
-      enrollment: updateResult.rows[0],
+      enrollment: updated,
     });
   } catch (err) {
     next(err);

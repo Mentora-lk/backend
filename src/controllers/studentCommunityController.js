@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const { createNotification } = require('./notificationController');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/student/communities/discover
@@ -109,6 +110,24 @@ const requestCommunityAccess = async (req, res, next) => {
     const io = req.app.locals.io;
     if (io && requestData) {
       io.to(`user:${requestData.tutor_id}`).emit('new_membership_request', requestData);
+    }
+
+    // ── Notify tutor in-app (real-time via socket + persisted bell row) ────
+    if (requestData) {
+      try {
+        await createNotification({
+          io,
+          userId: requestData.tutor_id,
+          type: 'community_join_request',
+          title: 'New community join request',
+          body: `${requestData.student_name} requested to join "${requestData.community_name}"`,
+          relatedColumn: 'related_membership_id',
+          relatedId: requestData.membership_id,
+        });
+      } catch (notifErr) {
+        // A notification failure must not fail the membership request itself.
+        console.warn('⚠️ Notification creation failed:', notifErr.message);
+      }
     }
 
     res.status(201).json({
