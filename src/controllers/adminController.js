@@ -23,19 +23,23 @@ module.exports = {
 
   // GET /api/admin/tutors
   getTutors: async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT tp.id, tp.full_name, tp.email, tp.subject, tp.city, u.created_at
-         FROM tutor_profiles tp
-         JOIN users u ON tp.user_id = u.id
-         ORDER BY u.created_at DESC`
-      );
-      res.json(result.rows);
-    } catch (err) {
-      console.error('Get tutors error:', err);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
+  try {
+    const result = await pool.query(
+      `SELECT tp.id, tp.full_name, tp.email, tp.subject, tp.city, u.created_at,
+              tp.university, tp.degree_title, tp.graduation_year, tp.experience,
+              tp.credentials, tp.description,
+              tp.dob, tp.gender, tp.phone, tp.address,
+              tp.medium, tp.level, tp.grade_range, tp.class_type, tp.fee
+       FROM tutor_profiles tp
+       JOIN users u ON tp.user_id = u.id
+       ORDER BY u.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get tutors error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+},
 
   // POST /api/admin/tutors
   createTutor: async (req, res) => {
@@ -68,19 +72,21 @@ module.exports = {
 
   // GET /api/admin/students
   getStudents: async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT sp.user_id, sp.full_name, sp.grade_level, sp.school_institute, u.email, u.created_at
-         FROM student_profiles sp
-         JOIN users u ON sp.user_id = u.id
-         ORDER BY u.created_at DESC`
-      );
-      res.json(result.rows);
-    } catch (err) {
-      console.error('Get students error:', err);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
+  try {
+    const result = await pool.query(
+      `SELECT sp.user_id, sp.full_name, sp.school_institute, sp.age, sp.language,
+              sp.grade_level, sp.address, sp.phone, sp.bio, sp.profile_picture_url,
+              u.email, u.created_at
+       FROM student_profiles sp
+       JOIN users u ON sp.user_id = u.id
+       ORDER BY u.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get students error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+},
 
   // POST /api/admin/students
   createStudent: async (req, res) => {
