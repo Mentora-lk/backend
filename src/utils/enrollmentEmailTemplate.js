@@ -30,7 +30,7 @@ const enrollmentEmailTemplate = ({
     <div style="background:white;padding:32px;border-radius:0 0 16px 16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
       <h2 style="color:#111827;font-size:20px;font-weight:700;margin:0 0 8px;">
-        Hello ${tutorName}! 👋
+        Hello ${tutorName}!
       </h2>
       <p style="color:#6B7280;font-size:14px;line-height:1.7;margin:0 0 22px;">
         You have received a new enrollment request from a student on Mentora.lk.
@@ -40,7 +40,7 @@ const enrollmentEmailTemplate = ({
       <!-- Alert box -->
       <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-left:4px solid #10B981;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
         <p style="color:#065F46;font-weight:700;font-size:15px;margin:0 0 4px;">
-          🎓 New Enrollment Request
+          New Enrollment Request
         </p>
         <p style="color:#047857;font-size:13px;margin:0;">
           A student wants to join <strong>${courseName}</strong>
@@ -53,11 +53,11 @@ const enrollmentEmailTemplate = ({
       </h3>
       <table style="width:100%;border-collapse:separate;border-spacing:0 4px;">
         ${[
-          ['📚 Course',         courseName],
-          ['👤 Student Name',   studentName],
-          ['📅 Preferred Day',  selectedDay],
-          ['🕐 Preferred Time', selectedTime],
-          ['💻 Mode',           preferredMode || 'Online'],
+          ['Course',         courseName],
+          ['Student Name',   studentName],
+          ['Preferred Day',  selectedDay],
+          ['Preferred Time', selectedTime],
+          ['Mode',           preferredMode || 'Online'],
         ].map(([label, value]) => `
           <tr>
             <td style="padding:9px 14px;background:#F9FAFB;border-radius:8px 0 0 8px;color:#6B7280;font-size:13px;font-weight:600;width:38%;">
@@ -74,7 +74,7 @@ const enrollmentEmailTemplate = ({
       ${studentMessage ? `
       <div style="background:#F9FAFB;border-radius:12px;padding:16px;margin-top:18px;border:1px solid #E5E7EB;">
         <p style="color:#374151;font-weight:700;font-size:13px;margin:0 0 6px;">
-          💬 Message from Student:
+          Message from Student:
         </p>
         <p style="color:#6B7280;font-size:13px;line-height:1.6;margin:0;font-style:italic;">
           "${studentMessage}"

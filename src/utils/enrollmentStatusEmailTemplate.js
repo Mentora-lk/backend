@@ -12,7 +12,7 @@ const enrollmentStatusEmailTemplate = ({
 }) => {
   const isApproved = status === 'approved';
 
-  const headline = isApproved ? "🎉 You're In!" : 'Enrollment Update';
+  const headline = isApproved ? "You're In!" : 'Enrollment Update';
   const alertBg = isApproved ? '#ECFDF5' : '#FEF2F2';
   const alertBorder = isApproved ? '#A7F3D0' : '#FECACA';
   const alertAccent = isApproved ? '#10B981' : '#EF4444';
@@ -47,7 +47,7 @@ const enrollmentStatusEmailTemplate = ({
     <div style="background:white;padding:32px;border-radius:0 0 16px 16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
       <h2 style="color:#111827;font-size:20px;font-weight:700;margin:0 0 8px;">
-        Hi ${studentName || 'there'}! 👋
+        Hi ${studentName || 'there'}!
       </h2>
       <p style="color:#6B7280;font-size:14px;line-height:1.7;margin:0 0 22px;">
         There's an update on the enrollment request you submitted on Mentora.lk.
@@ -70,9 +70,9 @@ const enrollmentStatusEmailTemplate = ({
       </h3>
       <table style="width:100%;border-collapse:separate;border-spacing:0 4px;">
         ${[
-          ['📚 Course', courseName],
-          ['📅 Day', selectedDay],
-          ['🕐 Time', selectedTime],
+          ['Course', courseName],
+          ['Day', selectedDay],
+          ['Time', selectedTime],
         ].map(([label, value]) => `
           <tr>
             <td style="padding:9px 14px;background:#F9FAFB;border-radius:8px 0 0 8px;color:#6B7280;font-size:13px;font-weight:600;width:38%;">

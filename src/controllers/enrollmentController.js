@@ -5,6 +5,8 @@ const sendEmail = require('../utils/sendEmail');
 const enrollmentEmailTemplate = require('../utils/enrollmentEmailTemplate');
 const enrollmentStatusEmailTemplate = require('../utils/enrollmentStatusEmailTemplate');
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Shared required-field check for both creating and editing an enrollment's
 // content fields. classId is validated separately by callers since it only
 // applies to creation (the enrolled class isn't editable after the fact).
@@ -12,6 +14,16 @@ function validateEnrollmentFields({ fullName, email, phone, grade, selectedDay, 
   if (!fullName || !email || !phone || !grade || !selectedDay || !selectedTime) {
     return 'Missing required enrollment fields';
   }
+
+  if (!EMAIL_REGEX.test(email)) {
+    return 'Please provide a valid email address';
+  }
+
+  const phoneDigits = phone.replace(/\D/g, '');
+  if (phoneDigits.length < 9 || phoneDigits.length > 15) {
+    return 'Please provide a valid phone number';
+  }
+
   return null;
 }
 
@@ -76,19 +88,24 @@ const createEnrollment = async (req, res, next) => {
       return res.status(400).json({ message: 'This course is not accepting enrollments' });
     }
 
-    // Prevent duplicate open requests only
+    // Block re-enrollment with the same tutor (any of their classes) while a
+    // request is pending or already accepted. Only 'rejected'/'cancelled'
+    // enrollments leave the student free to re-apply.
     const existingResult = await pool.query(
-      `SELECT * FROM enrollments
-       WHERE student_id = $1
-         AND class_id = $2
-         AND status IN ('pending', 'requested')`,
-      [studentId, classId]
+      `SELECT e.* FROM enrollments e
+       JOIN courses c ON e.class_id = c.id
+       WHERE e.student_id = $1
+         AND c.tutor_id = $2
+         AND e.status IN ('pending', 'requested', 'approved', 'active')`,
+      [studentId, course.tutor_id]
     );
 
     if (existingResult.rows.length > 0) {
-      return res.status(409).json({
-        message: 'You already have a pending request for this class',
-      });
+      const existingStatus = existingResult.rows[0].status;
+      const message = existingStatus === 'approved' || existingStatus === 'active'
+        ? 'You are already enrolled with this tutor'
+        : 'You already have a pending request with this tutor';
+      return res.status(409).json({ message });
     }
 
     // Check max students
