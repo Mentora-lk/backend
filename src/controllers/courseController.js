@@ -123,18 +123,24 @@ const createCourse = async (req, res, next) => {
   try {
     const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
 
-    // Validate required fields
-    if (!title || !subject || !fee) {
+    // Validate required fields (fee === 0 is a legitimate free-course value,
+    // so check for missing rather than falsy)
+    if (!title || !subject || fee === undefined || fee === null || fee === '') {
       return res.status(400).json({ message: 'Title, subject, and fee are required' });
     }
 
     const tutorId = req.user.id; // From authMiddleware
 
+    let imageUrl = image || '';
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/course-banners');
+    }
+
     const result = await pool.query(
       `INSERT INTO courses
        (tutor_id, title, subject, description, fee, schedule, mode, location, max_students, status, image, grade, medium, "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
-      [tutorId, title, subject, description, fee, toScheduleJsonb(schedule), mode || 'both', location || 'Remote', max_students || 50, 'active', image || '', grade || '', medium || '']
+      [tutorId, title, subject, description, fee, toScheduleJsonb(schedule), mode || 'both', location || 'Remote', max_students || 50, 'active', imageUrl, grade || '', medium || '']
     );
 
     res.status(201).json(result.rows[0]);

@@ -344,6 +344,12 @@ const updateEnrollmentStatus = async (req, res, next) => {
       }
     }
 
+    // ── Push a live update to the student's dashboard ──────────────────────
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`user:${enrollment.student_id}`).emit('enrollment_status_updated', enrollment);
+    }
+
     res.json({
       message: `Enrollment ${status}`,
       enrollment,
