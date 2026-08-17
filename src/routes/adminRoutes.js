@@ -2,20 +2,29 @@ const express = require('express');
 const adminController = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware');
 const router = express.Router();
+
 // All admin routes are protected — must be logged in
 router.get('/dashboard', authMiddleware, adminController.getDashboard);
+
 router.get('/tutors',    authMiddleware, adminController.getTutors);
 router.post('/tutors',   authMiddleware, adminController.createTutor);
+
 router.get('/students',  authMiddleware, adminController.getStudents);
 router.post('/students', authMiddleware, adminController.createStudent);
+
 router.get('/sessions',  authMiddleware, adminController.getSessions);
 router.post('/sessions', authMiddleware, adminController.createSession);
 router.put('/sessions/:id', authMiddleware, adminController.updateSessionStatus);
-router.get('/payments',  authMiddleware, adminController.getPayments);
+
+router.get('/payments',       authMiddleware, adminController.getPayments);
+router.get('/tutor-payments', authMiddleware, adminController.getTutorPayments);
+
 router.get('/ads',       authMiddleware, adminController.getAds);
 router.post('/ads',      authMiddleware, adminController.createAd);
 router.put('/ads/:id',   authMiddleware, adminController.updateAdStatus);
+
 router.get('/me',          authMiddleware, adminController.getMe);
 router.put('/me',          authMiddleware, adminController.updateMe);
 router.put('/me/password', authMiddleware, adminController.changePassword);
+
 module.exports = router;
