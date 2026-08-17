@@ -317,7 +317,7 @@ const updateCourse = async (req, res, next) => {
   try {
     const courseId = req.params.id;
     const tutorId = req.user.id;
-    const { title, subject, description, fee, schedule, medium, mode, location, max_students, image, grade } = req.body;
+    const { title, subject, description, fee, schedule, medium, mode, location, max_students, grade } = req.body;
 
     // Verify course belongs to tutor
     const check = await pool.query('SELECT * FROM courses WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
@@ -325,13 +325,35 @@ const updateCourse = async (req, res, next) => {
       return res.status(404).json({ message: 'Course not found or unauthorized' });
     }
 
+    // The edit form sends a new banner as a `banner` file (multer parses it
+    // into req.file — see upload.single('banner') in courseRoutes.js), not
+    // as a plain `image` text field, so req.body.image is always empty.
+    // Upload the new file if one was attached; otherwise keep whatever
+    // image the course already had instead of wiping it out.
+    let imageUrl = check.rows[0].image;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/ad-banners', req.file.originalname);
+    }
+
+    // `mode` has a NOT NULL + CHECK(online|offline|both) constraint, but the
+    // edit form has no such selector — guard against an absent/invalid value
+    // (e.g. a stray "English") by keeping the course's existing mode instead
+    // of letting the UPDATE fail or silently corrupt the field.
+    const VALID_MODES = ['online', 'offline', 'both'];
+    const modeValue = VALID_MODES.includes(mode) ? mode : check.rows[0].mode;
+
+    // The edit form also has no location/max_students fields at all, so
+    // these would otherwise be silently wiped to NULL on every save.
+    const locationValue = location ?? check.rows[0].location;
+    const maxStudentsValue = max_students ?? check.rows[0].max_students;
+
     const result = await pool.query(
       `UPDATE courses
        SET title = $1, subject = $2, description = $3, fee = $4, schedule = $5,
            medium = $6, mode = $7, location = $8, max_students = $9, image = $10,
            grade = $11, "updatedAt" = NOW()
        WHERE id = $12 AND tutor_id = $13 RETURNING *`,
-      [title, subject, description, fee, toScheduleJsonb(schedule), medium, mode, location, max_students, image, grade, courseId, tutorId]
+      [title, subject, description, fee, toScheduleJsonb(schedule), medium, modeValue, locationValue, maxStudentsValue, imageUrl, grade, courseId, tutorId]
     );
 
     res.json(result.rows[0]);
@@ -370,4 +392,5 @@ module.exports = {
   deleteCourse,
   updateCourse,
   getPlatformStats,
+  toScheduleJsonb,
 };
