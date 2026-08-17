@@ -104,12 +104,22 @@ const createEnrollment = async (req, res, next) => {
         type: 'enrollment_request',
         title: 'New enrollment request',
         body: `${fullName} requested to join "${course.title}"`,
-        relatedColumn: 'related_enrollment_id',
-        relatedId: enrollment.id,
+        related: { related_enrollment_id: enrollment.id },
       });
     } catch (notifErr) {
       // A notification failure must not fail the enrollment request itself.
       console.warn('⚠️ Notification creation failed:', notifErr.message);
+    }
+
+    // Tell the tutor's Requests page in real time so a new request appears
+    // without a manual refresh — mirrors 'new_membership_request' on the
+    // community side. Payload is deliberately minimal (the row's exact
+    // display shape — avatar color, "X mins ago" text, etc. — is computed
+    // server-side in tutorController.getTutorRequests()); the frontend just
+    // refetches on this signal rather than duplicating that formatting here.
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`user:${course.tutor_id}`).emit('new_enrollment_request', { enrollmentId: enrollment.id });
     }
 
     // ── Send email notification to tutor ──────────────────────────────────
@@ -302,8 +312,7 @@ const updateEnrollmentStatus = async (req, res, next) => {
             status === 'approved'
               ? `Your request to join "${courseTitle}" was approved`
               : `Your request to join "${courseTitle}" was rejected`,
-          relatedColumn: 'related_enrollment_id',
-          relatedId: updated.id,
+          related: { related_enrollment_id: updated.id },
         });
       } catch (notifErr) {
         console.warn('⚠️ Notification creation failed:', notifErr.message);
@@ -326,7 +335,10 @@ const deleteEnrollment = async (req, res, next) => {
     const studentId = req.user.id;
 
     const existingResult = await pool.query(
-      'SELECT * FROM enrollments WHERE id = $1',
+      `SELECT e.*, c.tutor_id
+       FROM enrollments e
+       JOIN courses c ON c.id = e.class_id
+       WHERE e.id = $1`,
       [req.params.id]
     );
 
@@ -344,6 +356,16 @@ const deleteEnrollment = async (req, res, next) => {
       'DELETE FROM enrollments WHERE id = $1',
       [req.params.id]
     );
+
+    // Tell the tutor's Requests page in real time so a cancelled request
+    // disappears from their list/badge immediately instead of only on
+    // their next manual refresh.
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`user:${enrollment.tutor_id}`).emit('enrollment_cancelled', {
+        enrollmentId: enrollment.id,
+      });
+    }
 
     res.json({ message: 'Enrollment removed' });
   } catch (err) {

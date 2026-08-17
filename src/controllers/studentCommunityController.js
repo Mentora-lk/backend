@@ -99,7 +99,7 @@ const requestCommunityAccess = async (req, res, next) => {
     const notifyResult = await pool.query(
       `SELECT cm.id AS membership_id, cm.status, cm.requested_at,
               COALESCE(sp.full_name, 'Unknown') AS student_name,
-              c.name AS community_name, c.tutor_id
+              c.id AS community_id, c.name AS community_name, c.tutor_id
        FROM community_memberships cm
        JOIN communities c ON cm.community_id = c.id
        LEFT JOIN student_profiles sp ON sp.user_id = cm.student_id
@@ -121,8 +121,10 @@ const requestCommunityAccess = async (req, res, next) => {
           type: 'community_join_request',
           title: 'New community join request',
           body: `${requestData.student_name} requested to join "${requestData.community_name}"`,
-          relatedColumn: 'related_membership_id',
-          relatedId: requestData.membership_id,
+          related: {
+            related_membership_id: requestData.membership_id,
+            related_community_id: requestData.community_id,
+          },
         });
       } catch (notifErr) {
         // A notification failure must not fail the membership request itself.
@@ -150,14 +152,26 @@ const cancelCommunityRequest = async (req, res, next) => {
     const communityId = parseInt(req.params.id, 10);
 
     const result = await pool.query(
-      `DELETE FROM community_memberships
-       WHERE community_id = $1 AND student_id = $2 AND status = 'pending'
-       RETURNING id`,
+      `DELETE FROM community_memberships cm
+       USING communities c
+       WHERE cm.community_id = c.id
+         AND cm.community_id = $1 AND cm.student_id = $2 AND cm.status = 'pending'
+       RETURNING cm.id, c.tutor_id`,
       [communityId, studentId]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'No pending request found for this community' });
+    }
+
+    // Tell the tutor's Requests page in real time so a cancelled request
+    // disappears from their list immediately instead of only on their next
+    // manual refresh.
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`user:${result.rows[0].tutor_id}`).emit('community_request_cancelled', {
+        membershipId: result.rows[0].id,
+      });
     }
 
     res.status(200).json({ message: 'Request cancelled successfully' });
@@ -216,6 +230,7 @@ const getMyClasses = async (req, res, next) => {
          c.description,
          c.tags,
          c.created_at,
+         c.tutor_id,
          COALESCE(tp.full_name, 'Unknown') AS tutor_name,
          tp.profile_picture_url AS tutor_avatar,
          cm.requested_at AS joined_at,

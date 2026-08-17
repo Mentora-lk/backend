@@ -72,16 +72,17 @@ const markAllAsRead = async (req, res) => {
  * INSERT-then-`io.to('user:<id>').emit(...)` pattern. Call from any
  * controller that has `req.app.locals.io` and knows who to notify.
  *
- * `relatedId`/`relatedColumn` populate one of the table's typed FK columns
- * (e.g. related_enrollment_id) — pass relatedColumn: null to leave all of
- * them null (not every notification type needs one).
+ * `related` populates one or more of the table's typed FK columns (e.g.
+ * { related_membership_id: 5, related_community_id: 12 }) — the frontend
+ * bell uses these to deep-link a click straight to the relevant page.
+ * Omit/leave empty for notification types that don't need one.
  */
-const createNotification = async ({ io, userId, type, title, body, relatedColumn, relatedId }) => {
+const createNotification = async ({ io, userId, type, title, body, related = {} }) => {
   const columns = ['user_id', 'type', 'title', 'body'];
   const values = [userId, type, title, body];
-  if (relatedColumn) {
-    columns.push(relatedColumn);
-    values.push(relatedId);
+  for (const [col, val] of Object.entries(related)) {
+    columns.push(col);
+    values.push(val);
   }
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 

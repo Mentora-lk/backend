@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
+const { createNotification } = require('./notificationController');
 
 // 1. Community Management
 
@@ -255,13 +256,35 @@ exports.updateRequestStatus = async (req, res) => {
             [membership.community_id]
         );
         const io = req.app.locals.io;
+        const communityName = communityResult.rows[0]?.name || 'the community';
         if (io && communityResult.rows.length > 0) {
             io.to(`user:${membership.student_id}`).emit('membership_request_updated', {
                 membership_id: membership.id,
                 community_id: membership.community_id,
-                community_name: communityResult.rows[0].name,
+                community_name: communityName,
                 status: membership.status,
             });
+        }
+
+        // ── Notify student in-app (real-time via socket + persisted row) ───────
+        try {
+            await createNotification({
+                io,
+                userId: membership.student_id,
+                type: 'community_status',
+                title: status === 'approved' ? 'Community request approved' : 'Community request declined',
+                body:
+                    status === 'approved'
+                        ? `Your request to join "${communityName}" was approved`
+                        : `Your request to join "${communityName}" was declined`,
+                related: {
+                    related_membership_id: membership.id,
+                    related_community_id: membership.community_id,
+                },
+            });
+        } catch (notifErr) {
+            // A notification failure must not fail the status update itself.
+            console.warn('⚠️ Notification creation failed:', notifErr.message);
         }
 
         res.status(200).json({ status: 'success', data: membership });
