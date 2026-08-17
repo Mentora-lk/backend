@@ -429,6 +429,106 @@ const updateProfilePicture = async (req, res, next) => {
   }
 };
 
+// GET /api/tutors/todos (tutor only) — the Profile page's "To Do List" tab.
+// Each row is a task the tutor is tracking for themselves (not tied to a
+// class or student): what to do, when it's due, how long it'll take.
+const getTodos = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const result = await pool.query(
+      `SELECT id, task, finish_time AS "finishTime", duration_minutes AS "durationMinutes", status
+       FROM tutor_todos
+       WHERE tutor_id = $1
+       ORDER BY (status = 'completed') ASC, finish_time ASC NULLS LAST, id DESC`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/tutors/todos (tutor only)
+const addTodo = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { task, finishTime, durationMinutes } = req.body;
+
+    if (!task || !task.trim()) {
+      return res.status(400).json({ message: 'Task description is required' });
+    }
+    if (durationMinutes !== undefined && durationMinutes !== null && durationMinutes !== '' &&
+        (isNaN(Number(durationMinutes)) || Number(durationMinutes) < 0)) {
+      return res.status(400).json({ message: 'Duration must be a non-negative number of minutes' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO tutor_todos (tutor_id, task, finish_time, duration_minutes, status, "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, 'pending', NOW(), NOW())
+       RETURNING id, task, finish_time AS "finishTime", duration_minutes AS "durationMinutes", status`,
+      [
+        userId,
+        task.trim(),
+        finishTime || null,
+        durationMinutes !== undefined && durationMinutes !== null && durationMinutes !== '' ? Number(durationMinutes) : null,
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/tutors/todos/:id (tutor only) — toggles between pending/completed.
+const updateTodoStatus = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (status !== 'pending' && status !== 'completed') {
+      return res.status(400).json({ message: "Status must be 'pending' or 'completed'" });
+    }
+
+    const result = await pool.query(
+      `UPDATE tutor_todos SET status = $1, "updatedAt" = NOW()
+       WHERE id = $2 AND tutor_id = $3
+       RETURNING id, task, finish_time AS "finishTime", duration_minutes AS "durationMinutes", status`,
+      [status, id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/tutors/todos/:id (tutor only)
+const deleteTodo = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM tutor_todos WHERE id = $1 AND tutor_id = $2 RETURNING id',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    res.json({ message: 'Task deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getAllTutors,
   getDashboardData,
@@ -439,5 +539,9 @@ module.exports = {
   getRevenueAnalytics,
   addTransaction,
   deleteTransaction,
+  getTodos,
+  addTodo,
+  updateTodoStatus,
+  deleteTodo,
 };
 

@@ -13,6 +13,10 @@ router.delete('/transactions/:id', protect, authorize('tutor'), tutorController.
 router.get('/profile', protect, authorize('tutor'), tutorController.getProfile);
 router.put('/profile', protect, authorize('tutor'), tutorController.updateProfile);
 router.post('/profile-picture', protect, authorize('tutor'), upload.single('avatar'), tutorController.updateProfilePicture);
+router.get('/todos', protect, authorize('tutor'), tutorController.getTodos);
+router.post('/todos', protect, authorize('tutor'), tutorController.addTodo);
+router.patch('/todos/:id', protect, authorize('tutor'), tutorController.updateTodoStatus);
+router.delete('/todos/:id', protect, authorize('tutor'), tutorController.deleteTodo);
 router.get('/requests', protect, authorize('tutor'), tutorController.getTutorRequests);
 router.get('/', tutorController.getAllTutors);
 
