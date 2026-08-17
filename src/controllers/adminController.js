@@ -197,6 +197,24 @@ module.exports = {
     }
   },
 
+  // GET /api/admin/tutor-payments
+  // Payments tutors made for advertisement placements (tutor_payments table),
+  // joined with tutor_profiles to get the tutor's display name.
+  getTutorPayments: async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT tp.*, tprof.full_name as tutor_name
+         FROM tutor_payments tp
+         LEFT JOIN tutor_profiles tprof ON tp.tutor_id = tprof.id
+         ORDER BY tp."createdAt" DESC`
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Get tutor payments error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   // GET /api/admin/ads
   getAds: async (req, res) => {
     try {
