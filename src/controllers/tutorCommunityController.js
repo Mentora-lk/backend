@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
+const { toDownloadUrl } = require('../utils/cloudinaryDownloadUrl');
 
 // 1. Community Management
 
@@ -468,11 +469,13 @@ exports.downloadMaterial = async (req, res) => {
             });
         }
         
-        // Redirect to Cloudinary URL for download
-        res.status(200).json({ 
-            status: 'success', 
-            data: { 
-                download_url: post.media_url,
+        // fl_attachment so the CDN sends Content-Disposition: attachment — a bare
+        // Cloudinary URL renders inline in the browser instead of saving.
+        res.status(200).json({
+            status: 'success',
+            data: {
+                download_url: toDownloadUrl(post.media_url),
+                view_url: post.media_url,
                 message: 'Click the URL to download the material'
             }
         });

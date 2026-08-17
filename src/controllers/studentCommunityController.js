@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const { toDownloadUrl } = require('../utils/cloudinaryDownloadUrl');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/student/communities/discover
@@ -142,6 +143,70 @@ const cancelCommunityRequest = async (req, res, next) => {
     }
 
     res.status(200).json({ message: 'Request cancelled successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/student/communities/:id/leave
+// Leaves a community the caller has already been APPROVED into. This is the
+// counterpart to cancelCommunityRequest above: that one withdraws a still-
+// pending request, this one exits an active membership. Keeping them separate
+// means neither can silently do the other's job — a student can't "leave" a
+// community they were never accepted into, and cancelling a request can't
+// quietly drop an approved membership.
+// ─────────────────────────────────────────────────────────────────────────────
+const leaveCommunity = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const communityId = parseInt(req.params.id, 10);
+
+    if (Number.isNaN(communityId)) {
+      return res.status(400).json({ message: 'Invalid community id' });
+    }
+
+    const result = await pool.query(
+      `DELETE FROM community_memberships
+       WHERE community_id = $1 AND student_id = $2 AND status = 'approved'
+       RETURNING id`,
+      [communityId, studentId]
+    );
+
+    if (result.rows.length === 0) {
+      // Distinguish "never a member" from "still only pending", since the fix
+      // differs: the latter should be cancelled, not left.
+      const pending = await pool.query(
+        `SELECT id FROM community_memberships
+         WHERE community_id = $1 AND student_id = $2 AND status = 'pending'`,
+        [communityId, studentId]
+      );
+
+      if (pending.rows.length > 0) {
+        return res.status(409).json({
+          message: 'Your request for this community is still pending — cancel the request instead.',
+        });
+      }
+
+      return res.status(404).json({ message: 'You are not a member of this community' });
+    }
+
+    // Tell the tutor's dashboard so their member list and count update without
+    // a refresh, mirroring how membership requests are pushed on creation.
+    const communityResult = await pool.query(
+      'SELECT name, tutor_id FROM communities WHERE id = $1',
+      [communityId]
+    );
+    const io = req.app.locals.io;
+    if (io && communityResult.rows.length > 0) {
+      io.to(`user:${communityResult.rows[0].tutor_id}`).emit('community_member_left', {
+        community_id: communityId,
+        community_name: communityResult.rows[0].name,
+        student_id: studentId,
+      });
+    }
+
+    res.status(200).json({ message: 'You have left the community' });
   } catch (err) {
     next(err);
   }
@@ -424,11 +489,13 @@ const downloadMaterial = async (req, res, next) => {
       });
     }
 
-    // Return the Cloudinary URL for download
-    res.status(200).json({ 
-      status: 'success', 
-      data: { 
-        download_url: post.media_url,
+    // fl_attachment so the CDN sends Content-Disposition: attachment — a bare
+    // Cloudinary URL renders inline in the browser instead of saving.
+    res.status(200).json({
+      status: 'success',
+      data: {
+        download_url: toDownloadUrl(post.media_url),
+        view_url: post.media_url,
         message: 'Click the URL to download the material'
       }
     });
@@ -441,6 +508,7 @@ module.exports = {
   discoverCommunities,
   requestCommunityAccess,
   cancelCommunityRequest,
+  leaveCommunity,
   getMyPendingRequests,
   getMyClasses,
   getMyDeadlines,
