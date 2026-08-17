@@ -8,6 +8,7 @@ const {
   createCourse,
   deleteCourse,
   updateCourse,
+  updateCourseFinancials,
   getPlatformStats,
 } = require('../controllers/courseController');
 const { protect } = require('../middleware/authMiddleware');
@@ -29,6 +30,7 @@ router.post('/:id/reviews',  protect, restrictTo('student'), addReview);
 // Protected - only tutors can create/delete/update a course
 router.post('/', protect, restrictTo('tutor'), upload.single('banner'), createCourse);
 router.put('/:id', protect, restrictTo('tutor'), upload.single('banner'), updateCourse);
+router.patch('/:id/financials', protect, restrictTo('tutor'), updateCourseFinancials);
 router.delete('/:id', protect, restrictTo('tutor'), deleteCourse);
 
 module.exports = router;

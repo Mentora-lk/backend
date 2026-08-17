@@ -362,6 +362,58 @@ const updateCourse = async (req, res, next) => {
   }
 };
 
+// PATCH /api/courses/:id/financials (Tutor only)
+//
+// Narrow, additive endpoint for the Revenue Analytics "Class Profitability"
+// table — lets a tutor set/update just the fee, days-taught-per-month
+// (informational only), and monthly spend/expenses for one of their own
+// classes, without touching any of the other course fields the full
+// updateCourse endpoint requires (title, subject, schedule, etc).
+const updateCourseFinancials = async (req, res, next) => {
+  try {
+    const courseId = req.params.id;
+    const tutorId = req.user.id;
+    const { fee, daysPerMonth, monthlySpend } = req.body;
+
+    if (fee !== undefined && fee !== null && (isNaN(Number(fee)) || Number(fee) < 0)) {
+      return res.status(400).json({ message: 'Fee must be a non-negative number' });
+    }
+    if (daysPerMonth !== undefined && daysPerMonth !== null && daysPerMonth !== '' &&
+        (isNaN(Number(daysPerMonth)) || Number(daysPerMonth) < 0 || Number(daysPerMonth) > 31)) {
+      return res.status(400).json({ message: 'Days per month must be between 0 and 31' });
+    }
+    if (monthlySpend !== undefined && monthlySpend !== null && (isNaN(Number(monthlySpend)) || Number(monthlySpend) < 0)) {
+      return res.status(400).json({ message: 'Monthly spend must be a non-negative number' });
+    }
+
+    const check = await pool.query('SELECT id FROM courses WHERE id = $1 AND tutor_id = $2', [courseId, tutorId]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ message: 'Course not found or unauthorized' });
+    }
+
+    const result = await pool.query(
+      `UPDATE courses
+       SET fee = COALESCE($1, fee),
+           days_per_month = $2,
+           monthly_expenses = COALESCE($3, 0),
+           "updatedAt" = NOW()
+       WHERE id = $4 AND tutor_id = $5
+       RETURNING id, fee, days_per_month AS "daysPerMonth", monthly_expenses AS "monthlyExpenses"`,
+      [
+        fee !== undefined && fee !== null && fee !== '' ? Number(fee) : null,
+        daysPerMonth !== undefined && daysPerMonth !== null && daysPerMonth !== '' ? Number(daysPerMonth) : null,
+        monthlySpend !== undefined && monthlySpend !== null && monthlySpend !== '' ? Number(monthlySpend) : null,
+        courseId,
+        tutorId,
+      ]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/courses/stats
 const getPlatformStats = async (req, res, next) => {
   try {
@@ -391,6 +443,7 @@ module.exports = {
   createCourse,
   deleteCourse,
   updateCourse,
+  updateCourseFinancials,
   getPlatformStats,
   toScheduleJsonb,
 };

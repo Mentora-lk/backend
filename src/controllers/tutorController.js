@@ -159,6 +159,126 @@ const getAllTutors = (req, res) => {
   res.json({ message: 'Get all tutors' });
 };
 
+// GET /api/tutors/revenue-analytics (tutor only)
+//
+// Revenue is fully manual — the tutor logs their own income/outcome
+// (expense) entries in `tutor_transactions` (a general ledger, not tied to
+// any specific class) via the endpoints below, and this just aggregates
+// those entries. Nothing here is derived from enrollments/course fees.
+const getRevenueAnalytics = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const months = Math.min(Math.max(parseInt(req.query.months, 10) || 6, 1), 12);
+
+    const chartResult = await pool.query(`
+      SELECT
+        to_char(m.month, 'Mon') AS month,
+        EXTRACT(YEAR FROM m.month)::int AS year,
+        COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'income'), 0)::float AS income,
+        COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'outcome'), 0)::float AS outcome
+      FROM generate_series(
+             date_trunc('month', NOW()) - ($2 - 1) * interval '1 month',
+             date_trunc('month', NOW()),
+             interval '1 month'
+           ) AS m(month)
+      LEFT JOIN tutor_transactions t
+        ON t.tutor_id = $1 AND date_trunc('month', t.entry_date) = m.month
+      GROUP BY m.month
+      ORDER BY m.month
+    `, [userId, months]);
+
+    const monthlyChart = chartResult.rows.map(r => ({
+      month: r.month,
+      year: r.year,
+      income: Number(r.income),
+      outcome: Number(r.outcome),
+    }));
+
+    const currentMonthIncome = monthlyChart.length > 0 ? monthlyChart[monthlyChart.length - 1].income : 0;
+    const previousMonthIncome = monthlyChart.length > 1 ? monthlyChart[monthlyChart.length - 2].income : 0;
+    const revenueGrowthPercent = previousMonthIncome > 0
+      ? ((currentMonthIncome - previousMonthIncome) / previousMonthIncome) * 100
+      : (currentMonthIncome > 0 ? 100 : 0);
+
+    const totalsResult = await pool.query(`
+      SELECT
+        COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0)::float AS "totalRevenue",
+        COALESCE(SUM(amount) FILTER (WHERE type = 'outcome'), 0)::float AS "totalOutcome"
+      FROM tutor_transactions
+      WHERE tutor_id = $1
+    `, [userId]);
+    const { totalRevenue, totalOutcome } = totalsResult.rows[0];
+
+    const transactionsResult = await pool.query(`
+      SELECT id, type, amount::float AS amount, description, entry_date AS date
+      FROM tutor_transactions
+      WHERE tutor_id = $1
+      ORDER BY entry_date DESC, id DESC
+      LIMIT 100
+    `, [userId]);
+
+    res.json({
+      totalRevenue,
+      totalOutcome,
+      netProfit: totalRevenue - totalOutcome,
+      monthlyRevenue: currentMonthIncome,
+      revenueGrowthPercent,
+      monthlyChart,
+      transactions: transactionsResult.rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/tutors/transactions (tutor only) — add one manual income or
+// outcome (expense) entry to the tutor's ledger.
+const addTransaction = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { type, amount, description, date } = req.body;
+
+    if (type !== 'income' && type !== 'outcome') {
+      return res.status(400).json({ message: "Type must be 'income' or 'outcome'" });
+    }
+    if (amount === undefined || amount === null || isNaN(Number(amount)) || Number(amount) < 0) {
+      return res.status(400).json({ message: 'Amount must be a non-negative number' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO tutor_transactions (tutor_id, type, amount, description, entry_date, "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), NOW(), NOW())
+       RETURNING id, type, amount::float AS amount, description, entry_date AS date`,
+      [userId, type, Number(amount), description || null, date || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/tutors/transactions/:id (tutor only)
+const deleteTransaction = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM tutor_transactions WHERE id = $1 AND tutor_id = $2 RETURNING id',
+      [id, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    res.json({ message: 'Transaction deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 // Get tutor profile data
 const getProfile = async (req, res, next) => {
@@ -275,6 +395,9 @@ module.exports = {
   getDashboardData,
   getTutorRequests,
   getProfile,
-  updateProfile
+  updateProfile,
+  getRevenueAnalytics,
+  addTransaction,
+  deleteTransaction,
 };
 
