@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
 // schedule is stored as jsonb, e.g. {"Friday": ["5:00 PM","7:00 PM"]} — never render it
 // directly as a React child on the frontend, always summarize it into a string first.
@@ -299,6 +300,7 @@ const getProfile = async (req, res, next) => {
         COALESCE(tp.subject, '') as subject,
         COALESCE(tp.phone, '') as phone,
         COALESCE(tp.fee, '') as fee,
+        tp.profile_picture_url,
         tp.status as verification_status
       FROM users u
       LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
@@ -337,6 +339,7 @@ const getProfile = async (req, res, next) => {
       education: profile.university || '',
       bio: profile.bio || '',
       fee: profile.fee || '',
+      profilePictureUrl: profile.profile_picture_url || null,
       verified: profile.verification_status === 'active',
       stats: {
         classesCount: stats.classesCount,
@@ -390,12 +393,49 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+// POST /api/tutors/profile-picture (tutor only) — same Cloudinary pattern
+// already used for the tutor-registration profile picture and class ad
+// banners: upload the file buffer to Cloudinary, then save the returned
+// secure_url on tutor_profiles.profile_picture_url so it displays wherever
+// that column is already read (this profile page, course detail pages, etc).
+const updateProfilePicture = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    const imageUrl = await uploadToCloudinary(req.file.buffer, 'mentora/profiles', req.file.originalname);
+
+    const checkProfile = await pool.query('SELECT id FROM tutor_profiles WHERE user_id = $1', [userId]);
+
+    if (checkProfile.rows.length > 0) {
+      await pool.query(
+        'UPDATE tutor_profiles SET profile_picture_url = $1 WHERE user_id = $2',
+        [imageUrl, userId]
+      );
+    } else {
+      await pool.query(
+        'INSERT INTO tutor_profiles (user_id, profile_picture_url) VALUES ($1, $2)',
+        [userId, imageUrl]
+      );
+    }
+
+    res.json({ profilePictureUrl: imageUrl });
+  } catch (err) {
+    console.error('Error in updateProfilePicture:', err);
+    next(err);
+  }
+};
+
 module.exports = {
   getAllTutors,
   getDashboardData,
   getTutorRequests,
   getProfile,
   updateProfile,
+  updateProfilePicture,
   getRevenueAnalytics,
   addTransaction,
   deleteTransaction,
