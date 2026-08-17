@@ -4,7 +4,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const sendResetEmail = async (toEmail, resetToken) => {
   const resetLink = `${process.env.FRONTEND_URL}/dashboard/admin/reset-password/${resetToken}`;
 
-  await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: 'Mentora.lk Admin <onboarding@resend.dev>',
     to: toEmail,
     subject: 'Reset Your Admin Password',
@@ -22,6 +22,13 @@ const sendResetEmail = async (toEmail, resetToken) => {
       </div>
     `,
   });
+
+  if (error) {
+    console.error('Resend error:', error);
+    throw new Error(error.message || 'Failed to send reset email');
+  }
+
+  return data;
 };
 
 module.exports = { sendResetEmail };
