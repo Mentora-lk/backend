@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest",
-    "test:coverage": "jest --coverage --collectCoverageFrom=\"src/utils/sendEmail.js\" --collectCoverageFrom=\"src/utils/enrollmentEmailTemplate.js\" --collectCoverageFrom=\"src/controllers/enrollmentController.js\""
+    "test:coverage": "jest --coverage --collectCoverageFrom=\"src/utils/sendEmail.js\" --collectCoverageFrom=\"src/utils/enrollmentEmailTemplate.js\" --collectCoverageFrom=\"src/controllers/enrollmentController.js\" --collectCoverageFrom=\"src/jobs/weeklyReminderJob.js\" --collectCoverageFrom=\"src/utils/weeklyReminderEmailTemplate.js\""
   },
   "keywords": [
     "tutoring",
@@ -24,6 +24,7 @@
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "node-cron": "^4.6.0",
     "nodemailer": "^8.0.7",
     "pg": "^8.20.0",
     "socket.io": "^4.8.3",

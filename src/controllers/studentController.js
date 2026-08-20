@@ -1,6 +1,24 @@
 const { pool } = require('../config/db');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
 
+function validateProfileFields({ name, phone }) {
+  if (!name || !name.trim()) {
+    return 'Full name is required';
+  }
+  if (name.trim().length > 100) {
+    return 'Full name is too long';
+  }
+
+  if (phone) {
+    const phoneDigits = phone.replace(/\D/g, '');
+    if (phoneDigits.length < 9 || phoneDigits.length > 15) {
+      return 'Please provide a valid phone number';
+    }
+  }
+
+  return null;
+}
+
 // GET /api/students/profile
 // Mirrors tutorController.getProfile — real name/contact/academic info plus
 // real teaching... err, learning stats, replacing what used to be a fully
@@ -74,6 +92,11 @@ const updateProfile = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { name, phone, school, grade, bio, address } = req.body;
+
+    const validationError = validateProfileFields({ name, phone });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
 
     let profilePictureUrl = null;
     if (req.file) {

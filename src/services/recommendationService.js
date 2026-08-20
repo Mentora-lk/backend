@@ -177,7 +177,7 @@ const getRecommendedCourses = async (preferences = {}) => {
     goal: preferences.goal || null,
     city: preferences.city || null,
   };
-
+//!to get active courses
   const result = await pool.query(
     `SELECT c.*, tp.full_name, tp.university, tp.degree_title, tp.city AS tutor_city,
             tp.profile_picture_url, tp.experience
