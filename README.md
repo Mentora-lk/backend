@@ -59,6 +59,23 @@ src/
 └── uploads/      # File uploads directory
 ```
 
+## Test Credentials
+
+Use these credentials to test the application:
+
+### Tutor Account
+- **Email:** `janaka.abeywickrama@gmail.com`
+- **Password:** `Janaka@123`
+- **Name:** Janaka Abeywickrama
+- **Test Classes:** Vector Matrix and Integration, Physics Fundamentals, Chemistry Basics
+
+### Student Account
+- **Email:** `testboy@gmail.com`
+- **Password:** `testboy@123`
+- **Name:** Test boy
+- **School:** Test High School
+- **Grade:** A/L
+
 ## Database
 
 PostgreSQL is configured by default. Update the `.env` file with your database credentials.

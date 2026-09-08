@@ -1,5 +1,18 @@
 const { pool } = require('../config/db');
 
+// schedule is stored as jsonb, e.g. {"Friday": ["5:00 PM","7:00 PM"]} — never render it
+// directly as a React child on the frontend, always summarize it into a string first.
+const formatScheduleSummary = (schedule) => {
+  if (!schedule || typeof schedule !== 'object') return 'TBD';
+  const days = Object.keys(schedule);
+  if (days.length === 0) return 'TBD';
+  const firstDay = days[0];
+  const times = Array.isArray(schedule[firstDay]) ? schedule[firstDay] : [];
+  const timeStr = times.length > 0 ? times[0] : '';
+  const daysStr = days.length > 1 ? `${firstDay} +${days.length - 1} more` : firstDay;
+  return timeStr ? `${daysStr}, ${timeStr}` : daysStr;
+};
+
 const getDashboardData = async (req, res, next) => {
   try {
     // req.user.id is set by authMiddleware
@@ -7,24 +20,27 @@ const getDashboardData = async (req, res, next) => {
 
     // Get tutor's courses with enrolled student count
     const coursesResult = await pool.query(`
-      SELECT 
-        c.id, c.title, c.subject, c.location, c.mode, c.fee, 
-        c.average_rating as rating, c.status, c.max_students as "totalSlots", 
-        c.schedule as "nextSession", c.image,
+      SELECT
+        c.id, c.title, c.subject, c.location, c.mode, c.fee,
+        c.average_rating as rating, c.status, c.max_students as "totalSlots",
+        c.schedule, c.image,
         (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.status IN ('active', 'approved'))::int as "studentsEnrolled"
-      FROM PoatAD c
+      FROM courses c
       WHERE c.tutor_id = $1
       ORDER BY c."createdAt" DESC
     `, [userId]);
 
-    const classes = coursesResult.rows;
+    const classes = coursesResult.rows.map(c => ({
+      ...c,
+      nextSession: formatScheduleSummary(c.schedule),
+    }));
 
     // Get recent requests
     const requestsResult = await pool.query(`
       SELECT 
         e.id, e.full_name as name, c.subject, e."createdAt"
       FROM enrollments e
-      JOIN PoatAD c ON e.class_id = c.id
+      JOIN courses c ON e.class_id = c.id
       WHERE c.tutor_id = $1 AND e.status = 'pending'
       ORDER BY e."createdAt" DESC
       LIMIT 5
@@ -91,7 +107,7 @@ const getTutorRequests = async (req, res, next) => {
         e.email, e.phone, e.school, e.grade, e.preferred_mode,
         e.selected_day, e.selected_time
       FROM enrollments e
-      JOIN PoatAD c ON e.class_id = c.id
+      JOIN courses c ON e.class_id = c.id
       WHERE c.tutor_id = $1
       ORDER BY e."createdAt" DESC
     `, [userId]);
@@ -151,7 +167,7 @@ const getProfile = async (req, res, next) => {
 
     // Fetch profile data joining users and tutor_profiles (using LEFT JOIN in case profile doesn't exist yet)
     const result = await pool.query(`
-      SELECT 
+      SELECT
         u.email,
         u.role,
         COALESCE(tp.full_name, '') as name,
@@ -162,7 +178,8 @@ const getProfile = async (req, res, next) => {
         COALESCE(tp.description, '') as bio,
         COALESCE(tp.subject, '') as subject,
         COALESCE(tp.phone, '') as phone,
-        COALESCE(tp.fee, '') as fee
+        COALESCE(tp.fee, '') as fee,
+        tp.status as verification_status
       FROM users u
       LEFT JOIN tutor_profiles tp ON u.id = tp.user_id
       WHERE u.id = $1
@@ -173,7 +190,23 @@ const getProfile = async (req, res, next) => {
     }
 
     const profile = result.rows[0];
-    
+
+    // Real teaching stats for the profile page's summary cards — replaces the
+    // hardcoded "5 classes / 60 students / 4.8★" placeholders that used to be
+    // shown for every tutor regardless of actual data.
+    const statsResult = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM courses WHERE tutor_id = $1)::int AS "classesCount",
+        (SELECT COUNT(*) FROM courses WHERE tutor_id = $1 AND status = 'active')::int AS "activeClassesCount",
+        (SELECT COALESCE(AVG(average_rating), 0) FROM courses WHERE tutor_id = $1 AND status = 'active')::float AS "avgRating",
+        (SELECT COUNT(*) FROM enrollments e JOIN courses c ON e.class_id = c.id
+          WHERE c.tutor_id = $1 AND e.status IN ('active', 'approved'))::int AS "totalStudents",
+        (SELECT COUNT(*) FROM enrollments e JOIN courses c ON e.class_id = c.id
+          WHERE c.tutor_id = $1 AND e.status = 'requested')::int AS "pendingRequests"
+    `, [userId]);
+
+    const stats = statsResult.rows[0];
+
     res.json({
       name: profile.name || '',
       email: profile.email,
@@ -183,7 +216,15 @@ const getProfile = async (req, res, next) => {
       experience: profile.experience || '',
       education: profile.university || '',
       bio: profile.bio || '',
-      fee: profile.fee || ''
+      fee: profile.fee || '',
+      verified: profile.verification_status === 'active',
+      stats: {
+        classesCount: stats.classesCount,
+        activeClassesCount: stats.activeClassesCount,
+        avgRating: Number(stats.avgRating) || 0,
+        totalStudents: stats.totalStudents,
+        pendingRequests: stats.pendingRequests,
+      },
     });
   } catch (err) {
     console.error('Error in getProfile:', err);

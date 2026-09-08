@@ -32,6 +32,8 @@ router.post('/communities', tutorCommunityController.createCommunity);
 router.get('/communities/:id', tutorCommunityController.getCommunityById);
 router.get('/communities/:id/posts', tutorCommunityController.getCommunityPosts);
 router.get('/communities/:id/members', tutorCommunityController.getCommunityMembers);
+router.delete('/communities/:id', tutorCommunityController.deleteCommunity);
+router.delete('/communities/:id/members/:memberId', tutorCommunityController.removeMember);
 
 // 2. Request Management
 router.get('/requests', tutorCommunityController.getPendingRequests);

@@ -95,6 +95,7 @@ const loginWithGoogleIdToken = async (idToken, role) => {
 
     let user = await userModel.findUserByEmail(payload.email);
     let isNewUser = false;
+    let fullName;
 
     if (!user) {
         if (!role) {
@@ -105,6 +106,9 @@ const loginWithGoogleIdToken = async (idToken, role) => {
         }
         user = await createUserFromGoogle(payload, role);
         isNewUser = true;
+        fullName = payload.name || payload.email;
+    } else {
+        fullName = await userModel.findFullNameByUser(user.id, user.role);
     }
 
     return {
@@ -113,6 +117,7 @@ const loginWithGoogleIdToken = async (idToken, role) => {
             id: user.id,
             email: user.email,
             role: user.role,
+            fullName,
         },
         isNewUser,
     };

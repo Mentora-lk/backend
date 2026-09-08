@@ -29,7 +29,7 @@ const createEnrollment = async (req, res, next) => {
 
     // Check course exists
     const courseResult = await pool.query(
-      'SELECT * FROM poatad WHERE id = $1',
+      'SELECT * FROM courses WHERE id = $1',
       [classId]
     );
 
@@ -80,7 +80,7 @@ const createEnrollment = async (req, res, next) => {
       [
         studentId,
         classId,
-        'pending',
+        'requested', // enrollments.status CHECK constraint doesn't allow 'pending' — matches the initial state used elsewhere (Booking.js, updateEnrollmentStatus target values)
         fullName,
         email,
         phone,
@@ -182,7 +182,7 @@ const getMyEnrollments = async (req, res, next) => {
         tp.profile_picture_url AS tutor_avatar
        FROM enrollments e
        LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
        WHERE ${where.join(' AND ')}
        ORDER BY e."createdAt" DESC`,
       params
@@ -212,8 +212,8 @@ const getMySchedule = async (req, res, next) => {
         c.location,
         tp.full_name  AS tutor_name
        FROM enrollments e
-       LEFT JOIN courses c ON e.class_id = c.id
-       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.id
+       JOIN courses c ON e.class_id = c.id
+       LEFT JOIN tutor_profiles tp ON c.tutor_id = tp.user_id
        WHERE e.student_id = $1
          AND e.status IN ('approved', 'active')`,
       [req.user.id]

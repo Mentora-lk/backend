@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadToCloudinary } = require('../utils/cloudinaryUpload');
+const { toDownloadUrl } = require('../utils/cloudinaryDownloadUrl');
 
 // 1. Community Management
 
@@ -88,6 +89,66 @@ exports.getCommunityMembers = async (req, res) => {
         res.status(200).json({ status: 'success', data: allMembers });
     } catch (error) {
         console.error('Error fetching community members:', error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+};
+
+exports.deleteCommunity = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tutorId = req.user.id;
+
+        if (isNaN(parseInt(id))) {
+            return res.status(404).json({ status: 'error', message: 'Community not found' });
+        }
+
+        // Verify tutor owns the community
+        const community = await db.query('SELECT id FROM communities WHERE id = $1 AND tutor_id = $2', [id, tutorId]);
+        if (community.rows.length === 0) {
+            return res.status(403).json({ status: 'error', message: 'Not authorized to delete this community' });
+        }
+
+        // Manually cascade deletes to avoid foreign key violations if CASCADE is not configured in DB
+        await db.query('DELETE FROM community_memberships WHERE community_id = $1', [id]);
+        await db.query('DELETE FROM post_reactions WHERE post_id IN (SELECT id FROM posts WHERE community_id = $1)', [id]);
+        await db.query('DELETE FROM posts WHERE community_id = $1', [id]);
+        
+        await db.query('DELETE FROM communities WHERE id = $1', [id]);
+
+        res.status(200).json({ status: 'success', message: 'Community deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting community:', error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+};
+
+exports.removeMember = async (req, res) => {
+    try {
+        const { id, memberId } = req.params;
+        const tutorId = req.user.id;
+
+        if (isNaN(parseInt(id)) || isNaN(parseInt(memberId))) {
+            return res.status(404).json({ status: 'error', message: 'Invalid IDs' });
+        }
+
+        // Verify tutor owns the community
+        const community = await db.query('SELECT id FROM communities WHERE id = $1 AND tutor_id = $2', [id, tutorId]);
+        if (community.rows.length === 0) {
+            return res.status(403).json({ status: 'error', message: 'Not authorized to manage this community' });
+        }
+
+        const result = await db.query(
+            'DELETE FROM community_memberships WHERE community_id = $1 AND student_id = $2 RETURNING id',
+            [id, memberId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Member not found in community' });
+        }
+
+        res.status(200).json({ status: 'success', message: 'Member removed successfully' });
+    } catch (error) {
+        console.error('Error removing community member:', error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 };
@@ -408,11 +469,13 @@ exports.downloadMaterial = async (req, res) => {
             });
         }
         
-        // Redirect to Cloudinary URL for download
-        res.status(200).json({ 
-            status: 'success', 
-            data: { 
-                download_url: post.media_url,
+        // fl_attachment so the CDN sends Content-Disposition: attachment — a bare
+        // Cloudinary URL renders inline in the browser instead of saving.
+        res.status(200).json({
+            status: 'success',
+            data: {
+                download_url: toDownloadUrl(post.media_url),
+                view_url: post.media_url,
                 message: 'Click the URL to download the material'
             }
         });
